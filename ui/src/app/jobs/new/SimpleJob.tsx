@@ -1,8 +1,8 @@
 'use client';
 import { useMemo } from 'react';
 import {
-  modelArchs,
   ModelArch,
+  findModelArch,
   groupedModelOptions,
   quantizationOptions,
   defaultQtype,
@@ -58,8 +58,11 @@ export default function SimpleJob({
   isLoading,
 }: Props) {
   const modelArch = useMemo(() => {
-    return modelArchs.find(a => a.name === jobConfig.config.process[0].model.arch) as ModelArch;
-  }, [jobConfig.config.process[0].model.arch]);
+    return findModelArch(
+      jobConfig.config.process[0].model.arch,
+      jobConfig.config.process[0].model.name_or_path,
+    ) as ModelArch;
+  }, [jobConfig.config.process[0].model.arch, jobConfig.config.process[0].model.name_or_path]);
 
   const jobType = useMemo(() => {
     return jobTypeOptions.find(j => j.value === jobConfig.config.process[0].type);
@@ -271,7 +274,7 @@ export default function SimpleJob({
           <Card title="Model">
             <SelectInput
               label="Model Architecture"
-              value={jobConfig.config.process[0].model.arch}
+              value={modelArch?.name ?? jobConfig.config.process[0].model.arch}
               onChange={value => {
                 handleModelArchChange(jobConfig.config.process[0].model.arch, value, jobConfig, setJobConfig);
               }}
@@ -874,6 +877,30 @@ export default function SimpleJob({
                           className="pt-2"
                           onChange={value =>
                             setJobConfig(value == '' ? null : value, `config.process[0].datasets[${i}].control_path`)
+                          }
+                          options={[{ value: '', label: <>&nbsp;</> }, ...datasetOptions]}
+                        />
+                      )}
+                      {modelArch?.additionalSections?.includes('datasets.mask_path') && (
+                        <SelectInput
+                          label="Mask Dataset"
+                          docKey="datasets.mask_path"
+                          value={dataset.mask_path ?? ''}
+                          className="pt-2"
+                          onChange={value =>
+                            setJobConfig(value == '' ? null : value, `config.process[0].datasets[${i}].mask_path`)
+                          }
+                          options={[{ value: '', label: <>&nbsp;</> }, ...datasetOptions]}
+                        />
+                      )}
+                      {modelArch?.additionalSections?.includes('datasets.reference_path') && (
+                        <SelectInput
+                          label="Reference Dataset"
+                          docKey="datasets.reference_path"
+                          value={(dataset.reference_path as string) ?? ''}
+                          className="pt-2"
+                          onChange={value =>
+                            setJobConfig(value == '' ? null : value, `config.process[0].datasets[${i}].reference_path`)
                           }
                           options={[{ value: '', label: <>&nbsp;</> }, ...datasetOptions]}
                         />
@@ -1492,6 +1519,38 @@ export default function SimpleJob({
                               setJobConfig(newSamples, 'config.process[0].sample.samples');
                             } else {
                               setJobConfig(imagePath, `config.process[0].sample.samples[${i}].ctrl_img`);
+                            }
+                          }}
+                        />
+                      )}
+                      {modelArch?.additionalSections?.includes('sample.mask_img') && (
+                        <SampleControlImage
+                          instruction="Add Mask Image"
+                          className="mt-6 ml-4"
+                          src={sample.mask_img}
+                          onNewImageSelected={imagePath => {
+                            if (!imagePath) {
+                              let newSamples = objectCopy(jobConfig.config.process[0].sample.samples);
+                              delete newSamples[i].mask_img;
+                              setJobConfig(newSamples, 'config.process[0].sample.samples');
+                            } else {
+                              setJobConfig(imagePath, `config.process[0].sample.samples[${i}].mask_img`);
+                            }
+                          }}
+                        />
+                      )}
+                      {modelArch?.additionalSections?.includes('sample.reference_img') && (
+                        <SampleControlImage
+                          instruction="Add Reference Image"
+                          className="mt-6 ml-4"
+                          src={sample.reference_img as string}
+                          onNewImageSelected={imagePath => {
+                            if (!imagePath) {
+                              let newSamples = objectCopy(jobConfig.config.process[0].sample.samples);
+                              delete newSamples[i].reference_img;
+                              setJobConfig(newSamples, 'config.process[0].sample.samples');
+                            } else {
+                              setJobConfig(imagePath, `config.process[0].sample.samples[${i}].reference_img`);
                             }
                           }}
                         />

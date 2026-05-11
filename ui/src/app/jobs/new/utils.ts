@@ -1,5 +1,5 @@
 import { GroupedSelectOption, JobConfig, SelectOption } from '@/types';
-import { modelArchs, ModelArch } from './options';
+import { findModelArch } from './options';
 import { objectCopy } from '@/utils/basic';
 
 const expandDatasetDefaults = (
@@ -27,13 +27,13 @@ export const handleModelArchChange = (
   jobConfig: JobConfig,
   setJobConfig: (value: any, key: string) => void,
 ) => {
-  const currentArch = modelArchs.find(a => a.name === currentArchName);
+  const currentArch = findModelArch(currentArchName, jobConfig.config.process[0].model.name_or_path);
   if (!currentArch || currentArch.name === newArchName) {
     return;
   }
 
   // update the defaults when a model is selected
-  const newArch = modelArchs.find(model => model.name === newArchName);
+  const newArch = findModelArch(newArchName);
 
   // update vram setting
   if (!newArch?.additionalSections?.includes('model.low_vram')) {
@@ -69,6 +69,8 @@ export const handleModelArchChange = (
   // update datasets
   const hasControlPath = newArch?.additionalSections?.includes('datasets.control_path') || false;
   const hasMultiControlPaths = newArch?.additionalSections?.includes('datasets.multi_control_paths') || false;
+  const hasMaskPath = newArch?.additionalSections?.includes('datasets.mask_path') || false;
+  const hasReferencePath = newArch?.additionalSections?.includes('datasets.reference_path') || false;
   const hasNumFrames = newArch?.additionalSections?.includes('datasets.num_frames') || false;
   const controls = newArch?.controls ?? [];
   const datasets = jobConfig.config.process[0].datasets.map(dataset => {
@@ -120,16 +122,30 @@ export const handleModelArchChange = (
     if (!hasNumFrames) {
       newDataset.num_frames = 1; // reset num_frames if not applicable
     }
+    if (!hasMaskPath && 'mask_path' in newDataset) {
+      newDataset.mask_path = null;
+    }
+    if (!hasReferencePath && 'reference_path' in newDataset) {
+      delete newDataset.reference_path;
+    }
     return newDataset;
   });
   setJobConfig(datasets, 'config.process[0].datasets');
 
   // update samples
   const hasSampleCtrlImg = newArch?.additionalSections?.includes('sample.ctrl_img') || false;
+  const hasSampleMaskImg = newArch?.additionalSections?.includes('sample.mask_img') || false;
+  const hasSampleReferenceImg = newArch?.additionalSections?.includes('sample.reference_img') || false;
   const samples = jobConfig.config.process[0].sample.samples.map(sample => {
     const newSample = objectCopy(sample);
     if (!hasSampleCtrlImg) {
       delete newSample.ctrl_img; // remove ctrl_img if not applicable
+    }
+    if (!hasSampleMaskImg) {
+      delete newSample.mask_img;
+    }
+    if (!hasSampleReferenceImg) {
+      delete newSample.reference_img;
     }
     return newSample;
   });

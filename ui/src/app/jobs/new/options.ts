@@ -17,12 +17,16 @@ type DisableableSections =
 type AdditionalSections =
   | 'datasets.control_path'
   | 'datasets.multi_control_paths'
+  | 'datasets.mask_path'
+  | 'datasets.reference_path'
   | 'datasets.do_i2v'
   | 'datasets.do_audio'
   | 'datasets.audio_normalize'
   | 'datasets.audio_preserve_pitch'
   | 'datasets.auto_frame_count'
   | 'sample.ctrl_img'
+  | 'sample.mask_img'
+  | 'sample.reference_img'
   | 'sample.multi_ctrl_imgs'
   | 'train.audio_loss_multiplier'
   | 'datasets.num_frames'
@@ -57,6 +61,29 @@ export interface ModelArch {
   accuracyRecoveryAdapters?: { [key: string]: string };
   sampleTags?: SampleTags;
 }
+
+export const findModelArch = (archName: string, nameOrPath?: string | null): ModelArch | undefined => {
+  const exact = modelArchs.find(a => a.name === archName);
+  if (exact) {
+    return exact;
+  }
+
+  if (archName === 'wan21_vace') {
+    if (nameOrPath?.toLowerCase().includes('14b')) {
+      return modelArchs.find(a => a.name === 'wan21_vace:14b');
+    }
+    return modelArchs.find(a => a.name === 'wan21_vace:1.3b');
+  }
+
+  if (archName === 'wan21') {
+    if (nameOrPath?.toLowerCase().includes('14b')) {
+      return modelArchs.find(a => a.name === 'wan21:14b');
+    }
+    return modelArchs.find(a => a.name === 'wan21:1b');
+  }
+
+  return modelArchs.find(a => a.name.split(':')[0] === archName);
+};
 
 const defaultNameOrPath = '';
 const defaultLinearRank = 32
@@ -327,6 +354,78 @@ export const modelArchs: ModelArch[] = [
     },
     disableSections: ['network.conv'],
     additionalSections: ['sample.ctrl_img', 'datasets.num_frames', 'model.low_vram', 'datasets.do_i2v'],
+  },
+  {
+    name: 'wan21_vace:1.3b',
+    label: 'Wan 2.1 VACE (1.3B)',
+    group: 'instruction',
+    isVideoModel: true,
+    defaults: {
+      'config.process[0].model.name_or_path': ['Wan-AI/Wan2.1-VACE-1.3B-diffusers', defaultNameOrPath],
+      'config.process[0].model.quantize': [true, false],
+      'config.process[0].model.quantize_te': [true, false],
+      'config.process[0].model.low_vram': [true, false],
+      'config.process[0].sample.sampler': ['flowmatch', 'flowmatch'],
+      'config.process[0].train.noise_scheduler': ['flowmatch', 'flowmatch'],
+      'config.process[0].train.timestep_type': ['weighted', 'sigmoid'],
+      'config.process[0].sample.num_frames': [1, 1],
+      'config.process[0].sample.fps': [1, 1],
+      'config.process[0].model.model_kwargs': [
+        {
+          vace_task: 'edit',
+          conditioning_scale: 1.0,
+          default_mask: 'full',
+        },
+        {},
+      ],
+    },
+    disableSections: ['network.conv'],
+    additionalSections: [
+      'datasets.control_path',
+      'datasets.mask_path',
+      'sample.ctrl_img',
+      'sample.mask_img',
+      'sample.reference_img',
+      'datasets.num_frames',
+      'model.low_vram',
+      'model.layer_offloading',
+    ],
+  },
+  {
+    name: 'wan21_vace:14b',
+    label: 'Wan 2.1 VACE (14B)',
+    group: 'instruction',
+    isVideoModel: true,
+    defaults: {
+      'config.process[0].model.name_or_path': ['Wan-AI/Wan2.1-VACE-14B-diffusers', defaultNameOrPath],
+      'config.process[0].model.quantize': [true, false],
+      'config.process[0].model.quantize_te': [true, false],
+      'config.process[0].model.low_vram': [true, false],
+      'config.process[0].sample.sampler': ['flowmatch', 'flowmatch'],
+      'config.process[0].train.noise_scheduler': ['flowmatch', 'flowmatch'],
+      'config.process[0].train.timestep_type': ['weighted', 'sigmoid'],
+      'config.process[0].sample.num_frames': [1, 1],
+      'config.process[0].sample.fps': [1, 1],
+      'config.process[0].model.model_kwargs': [
+        {
+          vace_task: 'edit',
+          conditioning_scale: 1.0,
+          default_mask: 'full',
+        },
+        {},
+      ],
+    },
+    disableSections: ['network.conv'],
+    additionalSections: [
+      'datasets.control_path',
+      'datasets.mask_path',
+      'sample.ctrl_img',
+      'sample.mask_img',
+      'sample.reference_img',
+      'datasets.num_frames',
+      'model.low_vram',
+      'model.layer_offloading',
+    ],
   },
   {
     name: 'lumina2',

@@ -95,6 +95,7 @@ export interface DatasetConfig {
   resolution: number[];
   controls: string[];
   control_path?: string | null;
+  reference_path?: string | string[] | null;
   num_frames: number;
   shrink_video_to_frames: boolean;
   do_i2v?: boolean;
@@ -187,6 +188,8 @@ export interface SampleItem {
   ctrl_img_1?: string | null;
   ctrl_img_2?: string | null;
   ctrl_img_3?: string | null;
+  mask_img?: string | null;
+  reference_img?: string | string[] | null;
 }
 
 export interface SampleConfig {

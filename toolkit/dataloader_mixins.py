@@ -67,6 +67,7 @@ transforms_dict = {
 }
 
 img_ext_list = ['.jpg', '.jpeg', '.png', '.webp']
+video_ext_list = ['.mp4', '.avi', '.mov', '.webm', '.mkv', '.wmv', '.m4v', '.flv']
 
 
 def standardize_images(images):
@@ -1010,7 +1011,8 @@ class ControlFileItemDTOMixin:
             
             found_control_images = []
             for control_path in control_path_list:
-                for ext in img_ext_list:
+                control_exts = video_ext_list if self.is_video else img_ext_list
+                for ext in control_exts:
                     if os.path.exists(os.path.join(control_path, file_name_no_ext + ext)):
                         found_control_images.append(os.path.join(control_path, file_name_no_ext + ext))
                         self.has_control_image = True
@@ -1022,6 +1024,59 @@ class ControlFileItemDTOMixin:
                 # only do one
                 self.control_path = self.control_path[0]
 
+    def load_control_video(self: 'FileItemDTO', control_path: str):
+        cap = cv2.VideoCapture(control_path)
+        if not cap.isOpened():
+            raise Exception(f"Error: Could not open control video file {control_path}")
+
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        max_frame_index = max(total_frames - 1, 0)
+        if self.dataset_config.shrink_video_to_frames or total_frames < self.num_frames:
+            interval = max_frame_index / (self.num_frames - 1) if self.num_frames > 1 else 0
+            frames_to_extract = [min(int(round(i * interval)), max_frame_index) for i in range(self.num_frames)]
+        else:
+            fps = cap.get(cv2.CAP_PROP_FPS) or self.dataset_config.fps
+            frame_interval = max(1, int(round(fps / self.dataset_config.fps)))
+            max_start_frame = max(max_frame_index - ((self.num_frames - 1) * frame_interval), 0)
+            start_frame = random.randint(0, max_start_frame) if max_start_frame > 0 else 0
+            frames_to_extract = [min(start_frame + (i * frame_interval), max_frame_index) for i in range(self.num_frames)]
+
+        frame_tensors = []
+        transform = transforms.Compose([transforms.ToTensor()])
+        try:
+            for frame_idx in frames_to_extract:
+                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+                ret, frame = cap.read()
+                if not ret:
+                    raise Exception(f"Error reading frame {frame_idx} from control video {control_path}")
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                img = Image.fromarray(frame)
+                if self.flip_x:
+                    img = img.transpose(Image.FLIP_LEFT_RIGHT)
+                if self.flip_y:
+                    img = img.transpose(Image.FLIP_TOP_BOTTOM)
+
+                if self.dataset_config.buckets:
+                    img = img.resize((self.scale_to_width, self.scale_to_height), Image.BICUBIC)
+                    img = img.crop((
+                        self.crop_x,
+                        self.crop_y,
+                        self.crop_x + self.crop_width,
+                        self.crop_y + self.crop_height
+                    ))
+                else:
+                    img = img.resize((self.dataset_config.resolution, self.dataset_config.resolution), Image.BICUBIC)
+
+                if self.aug_replay_spatial_transforms:
+                    tensor = self.augment_spatial_control(img, transform=transform)
+                else:
+                    tensor = transform(img)
+                frame_tensors.append(tensor)
+        finally:
+            cap.release()
+
+        return torch.stack(frame_tensors, dim=0)
+
     def load_control_image(self: 'FileItemDTO'):
         control_tensors = []
         control_path_list = self.control_path
@@ -1029,6 +1084,9 @@ class ControlFileItemDTOMixin:
             control_path_list = [self.control_path]
         
         for control_path in control_path_list:
+            if control_path is not None and os.path.splitext(control_path)[1].lower() in video_ext_list:
+                control_tensors.append(self.load_control_video(control_path))
+                continue
             try:
                 img = Image.open(control_path)
                 img = exif_transpose(img)
@@ -1449,13 +1507,65 @@ class MaskFileItemDTOMixin:
             # we are using control images
             img_path = kwargs.get('path', None)
             file_name_no_ext = os.path.splitext(os.path.basename(img_path))[0]
-            for ext in img_ext_list:
+            mask_exts = video_ext_list if self.is_video else img_ext_list
+            for ext in mask_exts:
                 if os.path.exists(os.path.join(mask_path, file_name_no_ext + ext)):
                     self.mask_path = os.path.join(mask_path, file_name_no_ext + ext)
                     self.has_mask_image = True
                     break
 
+    def load_mask_video(self: 'FileItemDTO'):
+        cap = cv2.VideoCapture(self.mask_path)
+        if not cap.isOpened():
+            raise Exception(f"Error: Could not open mask video file {self.mask_path}")
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        max_frame_index = max(total_frames - 1, 0)
+        if self.dataset_config.shrink_video_to_frames or total_frames < self.num_frames:
+            interval = max_frame_index / (self.num_frames - 1) if self.num_frames > 1 else 0
+            frames_to_extract = [min(int(round(i * interval)), max_frame_index) for i in range(self.num_frames)]
+        else:
+            fps = cap.get(cv2.CAP_PROP_FPS) or self.dataset_config.fps
+            frame_interval = max(1, int(round(fps / self.dataset_config.fps)))
+            max_start_frame = max(max_frame_index - ((self.num_frames - 1) * frame_interval), 0)
+            start_frame = random.randint(0, max_start_frame) if max_start_frame > 0 else 0
+            frames_to_extract = [min(start_frame + (i * frame_interval), max_frame_index) for i in range(self.num_frames)]
+
+        transform = transforms.Compose([transforms.ToTensor()])
+        masks = []
+        try:
+            for frame_idx in frames_to_extract:
+                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+                ret, frame = cap.read()
+                if not ret:
+                    raise Exception(f"Error reading frame {frame_idx} from mask video {self.mask_path}")
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                img = Image.fromarray(frame)
+                if self.dataset_config.invert_mask:
+                    img = ImageOps.invert(img)
+                if self.flip_x:
+                    img = img.transpose(Image.FLIP_LEFT_RIGHT)
+                if self.flip_y:
+                    img = img.transpose(Image.FLIP_TOP_BOTTOM)
+                if self.dataset_config.buckets:
+                    img = img.resize((self.scale_to_width, self.scale_to_height), Image.BICUBIC)
+                    img = img.crop((
+                        self.crop_x,
+                        self.crop_y,
+                        self.crop_x + self.crop_width,
+                        self.crop_y + self.crop_height
+                    ))
+                else:
+                    img = img.resize((self.dataset_config.resolution, self.dataset_config.resolution), Image.BICUBIC)
+                tensor = self.augment_spatial_control(img, transform=transform) if self.aug_replay_spatial_transforms else transform(img)
+                masks.append(value_map(tensor, 0, 1.0, self.mask_min_value, 1.0))
+        finally:
+            cap.release()
+        self.mask_tensor = torch.stack(masks, dim=0)
+
     def load_mask_image(self: 'FileItemDTO'):
+        if self.mask_path is not None and os.path.splitext(self.mask_path)[1].lower() in video_ext_list:
+            self.load_mask_video()
+            return
         try:
             img = Image.open(self.mask_path)
             img = exif_transpose(img)

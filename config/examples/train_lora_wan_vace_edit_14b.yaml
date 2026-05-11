@@ -1,0 +1,73 @@
+---
+job: extension
+config:
+  name: "my_first_wan_vace_edit_lora_v1"
+  process:
+    - type: "sd_trainer"
+      training_folder: "output"
+      device: cuda:0
+      network:
+        type: "lora"
+        linear: 16
+        linear_alpha: 16
+      save:
+        dtype: float16
+        save_every: 250
+        max_step_saves_to_keep: 4
+      datasets:
+        # Target/output B images. Captions live beside these target images.
+        - folder_path: "/path/to/target_B/images"
+          # Source/input A images. Filenames must match target B filenames.
+          control_path: "/path/to/source_A/images"
+          # Optional masks. White = editable/reactive region, black = preserved/inactive region.
+#          mask_path: "/path/to/masks"
+          caption_ext: "txt"
+          caption_dropout_rate: 0.05
+          num_frames: 1
+          resolution: [512, 768]
+      train:
+        batch_size: 1
+        steps: 3000
+        gradient_accumulation: 1
+        train_unet: true
+        train_text_encoder: false
+        gradient_checkpointing: true
+        noise_scheduler: "flowmatch"
+        timestep_type: "weighted"
+        optimizer: "adamw8bit"
+        lr: 1e-4
+        optimizer_params:
+          weight_decay: 1e-4
+        cache_text_embeddings: true
+        dtype: bf16
+      model:
+        name_or_path: "Wan-AI/Wan2.1-VACE-14B-diffusers"
+        arch: "wan21_vace"
+        quantize: true
+        quantize_te: true
+        low_vram: true
+        model_kwargs:
+          vace_task: "edit"
+          conditioning_scale: 1.0
+          # full = train full-frame A->B edits when mask_path is omitted.
+          # preserve = use a black default mask when mask_path is omitted.
+          default_mask: "full"
+      sample:
+        sampler: "flowmatch"
+        sample_every: 250
+        width: 832
+        height: 480
+        num_frames: 1
+        fps: 1
+        samples:
+          - prompt: "apply the edit"
+            ctrl_img: "/path/to/source_A/images/0001.png"
+#            mask_img: "/path/to/masks/0001.png"
+        neg: ""
+        seed: 42
+        walk_seed: true
+        guidance_scale: 5
+        sample_steps: 25
+meta:
+  name: "[name]"
+  version: "1.0"

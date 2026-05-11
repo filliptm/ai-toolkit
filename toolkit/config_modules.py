@@ -63,6 +63,8 @@ class SampleItem:
         self.ctrl_img_1: Optional[str] = kwargs.get('ctrl_img_1', self.ctrl_img)
         self.ctrl_img_2: Optional[str] = kwargs.get('ctrl_img_2', None)
         self.ctrl_img_3: Optional[str] = kwargs.get('ctrl_img_3', None)
+        self.mask_img: Optional[str] = kwargs.get('mask_img', None)
+        self.reference_img: Optional[Union[str, List[str]]] = kwargs.get('reference_img', None)
         
         self.network_multiplier: float = kwargs.get('network_multiplier', sample_config.network_multiplier)
         # convert to a number if it is a string
@@ -579,7 +581,7 @@ class TrainConfig:
         self.audio_loss_multiplier = kwargs.get("audio_loss_multiplier", 1.0)
 
 
-ModelArch = Literal['sd1', 'sd2', 'sd3', 'sdxl', 'pixart', 'pixart_sigma', 'auraflow', 'flux', 'flex1', 'flex2', 'lumina2', 'vega', 'ssd', 'wan21']
+ModelArch = Literal['sd1', 'sd2', 'sd3', 'sdxl', 'pixart', 'pixart_sigma', 'auraflow', 'flux', 'flex1', 'flex2', 'lumina2', 'vega', 'ssd', 'wan21', 'wan21_vace']
 
 
 class ModelConfig:
@@ -968,6 +970,11 @@ class DatasetConfig:
 
         # ip adapter / reference dataset
         self.clip_image_path: str = kwargs.get('clip_image_path', None)  # depth maps, etc
+        self.reference_path: Union[str,List[str]] = kwargs.get('reference_path', None)
+        if self.reference_path == '':
+            self.reference_path = None
+        if self.clip_image_path is None and self.reference_path is not None and not isinstance(self.reference_path, list):
+            self.clip_image_path = self.reference_path
         # get the clip image randomly from the same folder as the image. Useful for folder grouped pairs.
         self.clip_image_from_same_folder: bool = kwargs.get('clip_image_from_same_folder', False)
         self.clip_image_augmentations: List[dict] = kwargs.get('clip_image_augmentations', None)
@@ -1071,6 +1078,8 @@ class GenerateImageConfig:
             ctrl_img_1: Optional[str] = None,  # first control image for multi control model
             ctrl_img_2: Optional[str] = None,  # second control image for multi control model
             ctrl_img_3: Optional[str] = None,  # third control image for multi control model
+            mask_img: Optional[str] = None,
+            reference_img: Optional[Union[str, List[str]]] = None,
             num_frames: int = 1,
             fps: int = 15,
             ctrl_idx: int = 0,
@@ -1114,6 +1123,8 @@ class GenerateImageConfig:
         self.ctrl_img_1 = ctrl_img_1
         self.ctrl_img_2 = ctrl_img_2
         self.ctrl_img_3 = ctrl_img_3
+        self.mask_img = mask_img
+        self.reference_img = reference_img
 
         # prompt string will override any settings above
         self._process_prompt_string()
