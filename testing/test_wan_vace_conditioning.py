@@ -7,6 +7,7 @@ import torch
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from extensions_built_in.diffusion_models.wan_vace.wan_vace_model import WanVACEModel
+from toolkit.config_modules import ModelConfig
 from toolkit.prompt_utils import PromptEmbeds
 
 
@@ -96,6 +97,20 @@ def test_vace_conditioning_latent_shape():
     assert conditioning.shape == (2, 96, 1, 8, 8)
 
 
+def test_vace_reference_conditioning_prepends_reference_latent():
+    model = _fake_model()
+    batch = SimpleNamespace(
+        control_tensor=torch.rand(2, 3, 64, 64),
+        mask_tensor=torch.ones(2, 1, 64, 64),
+        clip_image_tensor=torch.rand(2, 3, 64, 64),
+    )
+    latent_model_input = torch.randn(2, 16, 1, 8, 8)
+
+    conditioning = model._build_training_conditioning(batch, latent_model_input)
+
+    assert conditioning.shape == (2, 96, 2, 8, 8)
+
+
 def test_vace_noise_prediction_receives_control_stream():
     model = _fake_model()
     batch = SimpleNamespace(
@@ -157,9 +172,17 @@ def test_vace_lora_save_uses_comfy_projection_names():
     assert "transformer.vace_blocks.0.attn1.to_q.lora_A.weight" in loaded
 
 
+def test_vace_tagged_arch_normalizes_to_model_arch():
+    config = ModelConfig(arch="wan21_vace:14b", name_or_path="Wan-AI/Wan2.1-VACE-14B-diffusers")
+
+    assert config.arch == "wan21_vace"
+
+
 if __name__ == "__main__":
     test_vace_conditioning_latent_shape()
+    test_vace_reference_conditioning_prepends_reference_latent()
     test_vace_noise_prediction_receives_control_stream()
     test_vace_synthetic_training_step_updates_parameter()
     test_vace_lora_save_uses_comfy_projection_names()
+    test_vace_tagged_arch_normalizes_to_model_arch()
     print("Wan VACE conditioning tests passed")

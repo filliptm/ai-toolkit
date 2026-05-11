@@ -383,6 +383,7 @@ export const modelArchs: ModelArch[] = [
     additionalSections: [
       'datasets.control_path',
       'datasets.mask_path',
+      'datasets.reference_path',
       'sample.ctrl_img',
       'sample.mask_img',
       'sample.reference_img',
@@ -419,6 +420,7 @@ export const modelArchs: ModelArch[] = [
     additionalSections: [
       'datasets.control_path',
       'datasets.mask_path',
+      'datasets.reference_path',
       'sample.ctrl_img',
       'sample.mask_img',
       'sample.reference_img',

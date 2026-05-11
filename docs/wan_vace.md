@@ -46,6 +46,15 @@ datasets:
     mask_path: "datasets/my_edit/masks"
 ```
 
+Optional reference images can be paired by basename with `reference_path`.
+
+```yaml
+datasets:
+  - folder_path: "datasets/my_edit/target"
+    control_path: "datasets/my_edit/source"
+    reference_path: "datasets/my_edit/reference"
+```
+
 ## Sampling
 
 Wan VACE samples require `ctrl_img`. `mask_img` is optional.
@@ -57,6 +66,15 @@ sample:
       ctrl_img: "datasets/my_edit/source/0001.png"
       mask_img: "datasets/my_edit/masks/0001.png"
 ```
+
+`reference_img` is also supported for sample configs when using VACE reference
+conditioning.
+
+## ComfyUI LoRA Format
+
+Wan VACE LoRAs are saved with ComfyUI-compatible VACE projection names by
+default. The VACE projection keys are written as `before_proj` and `after_proj`
+rather than Diffusers' internal `proj_in` and `proj_out` names.
 
 ## Recommended Config
 

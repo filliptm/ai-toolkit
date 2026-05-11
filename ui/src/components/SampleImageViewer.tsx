@@ -29,7 +29,7 @@ export default function SampleImageViewer({
 }: Props) {
   const [mounted, setMounted] = useState(false);
   const [isOpen, setIsOpen] = useState(Boolean(imgPath));
-  const [showingControlIdx, setShowingControlIdx] = useState<number | null>(null);
+  const [showingInputIdx, setShowingInputIdx] = useState<number | null>(null);
 
   useEffect(() => setMounted(true), []);
 
@@ -47,7 +47,7 @@ export default function SampleImageViewer({
   }, [isOpen, imgPath, onChange]);
 
   const onCancel = useCallback(() => {
-    setShowingControlIdx(null);
+    setShowingInputIdx(null);
     setIsOpen(false);
   }, []);
 
@@ -85,7 +85,7 @@ export default function SampleImageViewer({
   const setImageAtIndex = useCallback(
     (idx: number) => {
       if (idx < 0 || idx >= sampleImages.length) return;
-      setShowingControlIdx(null);
+      setShowingInputIdx(null);
       onChange(sampleImages[idx]);
     },
     [sampleImages, numSamples, onChange],
@@ -131,28 +131,38 @@ export default function SampleImageViewer({
     return sampleConfig.samples[imgInfo.promptIdx];
   }, [sampleConfig, imgInfo.promptIdx]);
 
-  const controlImages = useMemo<string[]>(() => {
+  const inputImages = useMemo<{ path: string; title: string }[]>(() => {
     if (!imgPath) return [];
-    let controlImageArr: string[] = [];
+    let inputImageArr: { path: string; title: string }[] = [];
     if (sampleItem?.ctrl_img) {
       // can be a an array of paths, or a single path
       if (Array.isArray(sampleItem.ctrl_img)) {
-        controlImageArr = sampleItem.ctrl_img;
+        inputImageArr = sampleItem.ctrl_img.map((path, idx) => ({ path, title: `Control image ${idx + 1}` }));
       } else {
-        controlImageArr = [sampleItem.ctrl_img];
+        inputImageArr = [{ path: sampleItem.ctrl_img, title: 'Control image' }];
       }
     } else if (sampleItem?.ctrl_img_1) {
-      controlImageArr.push(sampleItem.ctrl_img_1);
+      inputImageArr.push({ path: sampleItem.ctrl_img_1, title: 'Control image 1' });
     }
     if (sampleItem?.ctrl_img_2) {
-      controlImageArr.push(sampleItem.ctrl_img_2);
+      inputImageArr.push({ path: sampleItem.ctrl_img_2, title: 'Control image 2' });
     }
     if (sampleItem?.ctrl_img_3) {
-      controlImageArr.push(sampleItem.ctrl_img_3);
+      inputImageArr.push({ path: sampleItem.ctrl_img_3, title: 'Control image 3' });
     }
-    // filter out nulls
-    controlImageArr = controlImageArr.filter(ci => ci !== null && ci !== undefined && ci !== '');
-    return controlImageArr;
+    if (sampleItem?.mask_img) {
+      inputImageArr.push({ path: sampleItem.mask_img, title: 'Mask image' });
+    }
+    if (sampleItem?.reference_img) {
+      if (Array.isArray(sampleItem.reference_img)) {
+        inputImageArr.push(
+          ...sampleItem.reference_img.map((path, idx) => ({ path, title: `Reference image ${idx + 1}` })),
+        );
+      } else {
+        inputImageArr.push({ path: sampleItem.reference_img, title: 'Reference image' });
+      }
+    }
+    return inputImageArr.filter(item => item.path !== null && item.path !== undefined && item.path !== '');
   }, [sampleItem, imgPath]);
 
   const seed = useMemo(() => {
@@ -165,11 +175,11 @@ export default function SampleImageViewer({
   }, [sampleItem, sampleConfig]);
 
   const displayedImgPath = useMemo(() => {
-    if (showingControlIdx !== null && controlImages[showingControlIdx]) {
-      return controlImages[showingControlIdx];
+    if (showingInputIdx !== null && inputImages[showingInputIdx]) {
+      return inputImages[showingInputIdx].path;
     }
     return imgPath;
-  }, [showingControlIdx, controlImages, imgPath]);
+  }, [showingInputIdx, inputImages, imgPath]);
 
   // keyboard events while open
   useEffect(() => {
@@ -253,27 +263,27 @@ export default function SampleImageViewer({
                   </div>
                 )}
               </div>
-              {controlImages.length > 0 && (
+              {inputImages.length > 0 && (
                 <div key={imgPath} className="flex space-x-2 mr-4">
-                  {showingControlIdx !== null && (
+                  {showingInputIdx !== null && (
                     <img
                       src={`/api/img/${encodeURIComponent(imgPath!)}`}
                       alt="Main"
                       className="max-h-12 max-w-12 object-contain bg-black border-2 border-gray-700 hover:border-gray-500 rounded cursor-pointer"
-                      onClick={() => setShowingControlIdx(null)}
+                      onClick={() => setShowingInputIdx(null)}
                       title="Main image"
                     />
                   )}
-                  {controlImages.map((ci, idx) => (
+                  {inputImages.map((input, idx) => (
                     <img
                       key={idx}
-                      src={`/api/img/${encodeURIComponent(ci)}`}
-                      alt={`Control ${idx + 1}`}
+                      src={`/api/img/${encodeURIComponent(input.path)}`}
+                      alt={input.title}
                       className={`max-h-12 max-w-12 object-contain bg-black border-2 rounded cursor-pointer ${
-                        showingControlIdx === idx ? 'border-blue-500' : 'border-gray-700 hover:border-gray-500'
+                        showingInputIdx === idx ? 'border-blue-500' : 'border-gray-700 hover:border-gray-500'
                       }`}
-                      onClick={() => setShowingControlIdx(idx)}
-                      title={`Control image ${idx + 1}`}
+                      onClick={() => setShowingInputIdx(idx)}
+                      title={input.title}
                     />
                   ))}
                 </div>
