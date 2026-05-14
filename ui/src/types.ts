@@ -74,6 +74,13 @@ export interface NetworkConfig {
   transformer_only?: boolean;
 }
 
+export interface AdapterConfig {
+  type: string;
+  name_or_path?: string | null;
+  train: boolean;
+  control_in_dim?: number;
+}
+
 export interface SaveConfig {
   dtype: string;
   save_every: number;
@@ -131,6 +138,7 @@ export interface TrainConfig {
   content_or_style: string;
   optimizer: string;
   lr: number;
+  adapter_lr?: number;
   ema_config?: EMAConfig;
   dtype: string;
   unload_text_encoder: boolean;
@@ -232,6 +240,7 @@ export interface ProcessConfig {
   trigger_word: string | null;
   device: string;
   network?: NetworkConfig;
+  adapter?: AdapterConfig;
   slider?: SliderConfig;
   save: SaveConfig;
   datasets: DatasetConfig[];

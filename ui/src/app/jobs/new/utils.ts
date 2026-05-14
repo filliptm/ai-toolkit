@@ -40,6 +40,10 @@ export const handleModelArchChange = (
     setJobConfig(false, 'config.process[0].model.low_vram');
   }
 
+  if (!newArch?.additionalSections?.includes('adapter.name_or_path')) {
+    setJobConfig(undefined, 'config.process[0].adapter');
+  }
+
   // handle layer offloading setting
   if (!newArch?.additionalSections?.includes('model.layer_offloading')) {
     if ('layer_offloading' in jobConfig.config.process[0].model) {

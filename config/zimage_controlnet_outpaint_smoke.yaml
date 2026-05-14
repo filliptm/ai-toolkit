@@ -1,0 +1,59 @@
+---
+job: extension
+config:
+  name: "zimage_controlnet_outpaint_smoke"
+  process:
+    - type: "diffusion_trainer"
+      training_folder: "output"
+      device: cuda:0
+      adapter:
+        type: "zimage_controlnet"
+        name_or_path: "C:/Users/Filli/.cache/huggingface/hub/models--alibaba-pai--Z-Image-Turbo-Fun-Controlnet-Union-2.1/snapshots/5155fc56d17821007d6f62ac192c09e0f0e72016/Z-Image-Turbo-Fun-Controlnet-Union-2.1-lite-2602-8steps.safetensors"
+        train: true
+      save:
+        dtype: float16
+        save_every: 100
+        max_step_saves_to_keep: 1
+      datasets:
+        - folder_path: "C:/AI/ai-toolkit/testing/zimage_outpaint_train/target"
+          control_path: "C:/AI/ai-toolkit/testing/zimage_outpaint_train/control"
+          mask_path: "C:/AI/ai-toolkit/testing/zimage_outpaint_train/mask"
+          caption_ext: "txt"
+          resolution: [512]
+          cache_latents_to_disk: true
+      train:
+        batch_size: 1
+        steps: 3
+        gradient_accumulation: 1
+        train_unet: false
+        train_text_encoder: false
+        gradient_checkpointing: true
+        noise_scheduler: "flowmatch"
+        optimizer: "adamw8bit"
+        lr: 2e-5
+        adapter_lr: 2e-5
+        timestep_type: "weighted"
+        skip_first_sample: true
+        disable_sampling: true
+        dtype: bf16
+      model:
+        name_or_path: "Tongyi-MAI/Z-Image-Turbo"
+        arch: "zimage"
+        quantize: true
+        quantize_te: true
+        qtype: "qfloat8"
+        qtype_te: "qfloat8"
+      sample:
+        sampler: "flowmatch"
+        sample_every: 100
+        width: 512
+        height: 512
+        prompts:
+          - "extend the cozy illustrated room naturally to the right"
+        neg: ""
+        seed: 42
+        guidance_scale: 1
+        sample_steps: 2
+meta:
+  name: "[name]"
+  version: "1.0"

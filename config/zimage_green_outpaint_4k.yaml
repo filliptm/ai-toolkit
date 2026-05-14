@@ -1,0 +1,80 @@
+---
+job: extension
+config:
+  name: "zimage_green_outpaint_4k"
+  process:
+    - type: "diffusion_trainer"
+      training_folder: "output"
+      device: cuda:0
+      adapter:
+        type: "zimage_controlnet"
+        name_or_path: "C:/Users/Filli/.cache/huggingface/hub/models--alibaba-pai--Z-Image-Turbo-Fun-Controlnet-Union-2.1/snapshots/5155fc56d17821007d6f62ac192c09e0f0e72016/Z-Image-Turbo-Fun-Controlnet-Union-2.1-lite-2602-8steps.safetensors"
+        train: true
+      save:
+        dtype: float16
+        save_every: 500
+        max_step_saves_to_keep: 4
+      datasets:
+        - folder_path: "C:/AI/ai-toolkit/datasets/zimage_green_outpaint_4k/target"
+          control_path: "C:/AI/ai-toolkit/datasets/zimage_green_outpaint_4k/control"
+          mask_path: "C:/AI/ai-toolkit/datasets/zimage_green_outpaint_4k/mask"
+          caption_ext: "txt"
+          resolution: [1536]
+          cache_latents_to_disk: true
+          num_repeats: 1
+      train:
+        batch_size: 1
+        steps: 8000
+        gradient_accumulation: 1
+        train_unet: false
+        train_text_encoder: false
+        gradient_checkpointing: true
+        noise_scheduler: "flowmatch"
+        optimizer: "adamw8bit"
+        lr: 0.00002
+        adapter_lr: 0.00002
+        timestep_type: "weighted"
+        skip_first_sample: false
+        disable_sampling: false
+        dtype: bf16
+      model:
+        name_or_path: "Tongyi-MAI/Z-Image-Turbo"
+        arch: "zimage"
+        quantize: true
+        quantize_te: true
+        qtype: "qfloat8"
+        qtype_te: "qfloat8"
+      sample:
+        sampler: "flowmatch"
+        sample_every: 500
+        width: 1536
+        height: 864
+        neg: ""
+        seed: 42
+        guidance_scale: 1
+        sample_steps: 8
+        adapter_conditioning_scale: 0.85
+        samples:
+          - prompt: "Fill only the neon green areas with coherent continuation of the landscape, matching perspective, lighting, texture, and detail."
+            width: 1536
+            height: 864
+            ctrl_img: "C:/AI/ai-toolkit/datasets/zimage_green_outpaint_4k/control/0001_landscape_16x9.png"
+            mask_img: "C:/AI/ai-toolkit/datasets/zimage_green_outpaint_4k/mask/0001_landscape_16x9.png"
+          - prompt: "Fill only the neon green areas with coherent continuation of the landscape, matching perspective, lighting, texture, and detail."
+            width: 1536
+            height: 864
+            ctrl_img: "C:/AI/ai-toolkit/datasets/zimage_green_outpaint_4k/control/0001_landscape_16x9_left_right.png"
+            mask_img: "C:/AI/ai-toolkit/datasets/zimage_green_outpaint_4k/mask/0001_landscape_16x9_left_right.png"
+          - prompt: "Fill only the neon green areas with coherent continuation of the vertical scene, matching perspective, lighting, texture, and detail."
+            width: 864
+            height: 1536
+            ctrl_img: "C:/AI/ai-toolkit/datasets/zimage_green_outpaint_4k/control/0001_portrait_9x16.png"
+            mask_img: "C:/AI/ai-toolkit/datasets/zimage_green_outpaint_4k/mask/0001_portrait_9x16.png"
+          - prompt: "Fill only the neon green areas with coherent continuation of the vertical scene, matching perspective, lighting, texture, and detail."
+            width: 864
+            height: 1536
+            ctrl_img: "C:/AI/ai-toolkit/datasets/zimage_green_outpaint_4k/control/0001_portrait_9x16_top_bottom.png"
+            mask_img: "C:/AI/ai-toolkit/datasets/zimage_green_outpaint_4k/mask/0001_portrait_9x16_top_bottom.png"
+meta:
+  name: "[name]"
+  version: "1.0"

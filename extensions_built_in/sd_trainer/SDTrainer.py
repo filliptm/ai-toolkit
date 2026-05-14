@@ -1888,6 +1888,24 @@ class SDTrainer(BaseSDTrainProcess):
                                                       is_unconditional=True)
 
                 if has_adapter_img:
+                    if (
+                        self.adapter is not None
+                        and self.adapter.__class__.__name__ == "ZImageControlNetModel"
+                        and hasattr(self.sd, "get_controlnet_block_samples")
+                    ):
+                        if self.train_config.do_cfg:
+                            raise ValueError("ZImageControlNetModel is not supported with CFG training")
+                        with torch.set_grad_enabled(self.adapter is not None):
+                            adapter_multiplier = get_adapter_multiplier()
+                            with self.timer('encode_zimage_controlnet'):
+                                pred_kwargs['controlnet_block_samples'] = self.sd.get_controlnet_block_samples(
+                                    latent_model_input=noisy_latents,
+                                    timestep=timesteps,
+                                    text_embeddings=conditional_embeds,
+                                    batch=batch,
+                                    controlnet=self.adapter,
+                                    conditioning_scale=adapter_multiplier,
+                                )
                     if (self.adapter and isinstance(self.adapter, ControlNetModel)) or (
                             self.assistant_adapter and isinstance(self.assistant_adapter, ControlNetModel)):
                         if self.train_config.do_cfg:

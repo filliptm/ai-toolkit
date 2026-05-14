@@ -1409,6 +1409,9 @@ class BaseModel:
             elif isinstance(self.adapter, ControlNetModel):
                 requires_grad = self.adapter.conv_in.training
                 adapter_device = self.adapter.device
+            elif self.adapter.__class__.__name__ == "ZImageControlNetModel":
+                requires_grad = self.adapter.training
+                adapter_device = self.adapter.device
             elif isinstance(self.adapter, ClipVisionAdapter):
                 requires_grad = self.adapter.embedder.training
                 adapter_device = self.adapter.device

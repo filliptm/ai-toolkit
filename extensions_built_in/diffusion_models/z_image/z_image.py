@@ -22,12 +22,20 @@ from transformers import AutoTokenizer, Qwen3ForCausalLM
 from diffusers import AutoencoderKL
 
 try:
-    from diffusers import ZImagePipeline
+    from diffusers import ZImagePipeline, ZImageControlNetInpaintPipeline
+    from diffusers.models.controlnets import ZImageControlNetModel
     from diffusers.models.transformers import ZImageTransformer2DModel
 except ImportError:
     raise ImportError(
         "Diffusers is out of date. Update diffusers to the latest version by doing pip uninstall diffusers and then pip install -r requirements.txt"
     )
+
+try:
+    import torch.nn.functional as F
+    from PIL import Image
+except ImportError:
+    F = None
+    Image = None
 
 
 scheduler_config = {
@@ -55,6 +63,7 @@ class ZImageModel(BaseModel):
         self.is_flow_matching = True
         self.is_transformer = True
         self.target_lora_modules = ["ZImageTransformer2DModel"]
+        self.controlnet = None
 
     # static method to get the noise scheduler
     @staticmethod
@@ -279,6 +288,20 @@ class ZImageModel(BaseModel):
     def get_generation_pipeline(self):
         scheduler = ZImageModel.get_train_scheduler()
 
+        if self.controlnet is not None:
+            pipeline: ZImageControlNetInpaintPipeline = ZImageControlNetInpaintPipeline(
+                scheduler=scheduler,
+                text_encoder=unwrap_model(self.text_encoder[0]),
+                tokenizer=self.tokenizer[0],
+                vae=unwrap_model(self.vae),
+                transformer=unwrap_model(self.transformer),
+                controlnet=unwrap_model(self.controlnet),
+            )
+
+            pipeline = pipeline.to(self.device_torch)
+
+            return pipeline
+
         pipeline: ZImagePipeline = ZImagePipeline(
             scheduler=scheduler,
             text_encoder=unwrap_model(self.text_encoder[0]),
@@ -300,34 +323,161 @@ class ZImageModel(BaseModel):
         generator: torch.Generator,
         extra: dict,
     ):
-        self.model.to(self.device_torch, dtype=self.torch_dtype)
-        self.model.to(self.device_torch)
+        if self.model.device != self.device_torch:
+            self.model.to(self.device_torch, dtype=self.torch_dtype)
+            self.model.to(self.device_torch)
 
         sc = self.get_bucket_divisibility()
         gen_config.width = int(gen_config.width // sc * sc)
         gen_config.height = int(gen_config.height // sc * sc)
-        img = pipeline(
-            prompt_embeds=conditional_embeds.text_embeds,
-            negative_prompt_embeds=unconditional_embeds.text_embeds,
-            height=gen_config.height,
-            width=gen_config.width,
-            num_inference_steps=gen_config.num_inference_steps,
-            guidance_scale=gen_config.guidance_scale,
-            latents=gen_config.latents,
-            generator=generator,
-            **extra,
-        ).images[0]
+        if isinstance(pipeline, ZImageControlNetInpaintPipeline):
+            if gen_config.ctrl_img is None:
+                raise ValueError("Z-Image ControlNet inpaint/outpaint samples require sample.ctrl_img")
+            if gen_config.mask_img is None:
+                raise ValueError("Z-Image ControlNet inpaint/outpaint samples require sample.mask_img")
+            if Image is None:
+                raise ImportError("Pillow is required for Z-Image ControlNet sampling")
+
+            init_img = Image.open(gen_config.ctrl_img).convert("RGB")
+            mask_img = Image.open(gen_config.mask_img).convert("L")
+            if init_img.size != (gen_config.width, gen_config.height):
+                init_img = init_img.resize((gen_config.width, gen_config.height), Image.BILINEAR)
+            if mask_img.size != (gen_config.width, gen_config.height):
+                mask_img = mask_img.resize((gen_config.width, gen_config.height), Image.NEAREST)
+
+            img = pipeline(
+                image=init_img,
+                mask_image=mask_img,
+                control_image=init_img,
+                prompt_embeds=conditional_embeds.text_embeds,
+                negative_prompt_embeds=unconditional_embeds.text_embeds,
+                height=gen_config.height,
+                width=gen_config.width,
+                num_inference_steps=gen_config.num_inference_steps,
+                guidance_scale=gen_config.guidance_scale,
+                controlnet_conditioning_scale=gen_config.adapter_conditioning_scale,
+                latents=gen_config.latents,
+                generator=generator,
+                **extra,
+            ).images[0]
+        else:
+            img = pipeline(
+                prompt_embeds=conditional_embeds.text_embeds,
+                negative_prompt_embeds=unconditional_embeds.text_embeds,
+                height=gen_config.height,
+                width=gen_config.width,
+                num_inference_steps=gen_config.num_inference_steps,
+                guidance_scale=gen_config.guidance_scale,
+                latents=gen_config.latents,
+                generator=generator,
+                **extra,
+            ).images[0]
         return img
+
+    def attach_controlnet(self, controlnet: ZImageControlNetModel):
+        self.controlnet = ZImageControlNetModel.from_transformer(controlnet, unwrap_model(self.transformer))
+        if not hasattr(self.controlnet, "gradient_checkpointing"):
+            self.controlnet.gradient_checkpointing = False
+        self.adapter = self.controlnet
+
+    def _get_mask_for_batch(self, batch, latents: torch.Tensor):
+        mask = None
+        if getattr(batch, "mask_tensor", None) is not None:
+            mask = batch.mask_tensor
+        elif getattr(batch, "inpaint_tensor", None) is not None:
+            inpaint_tensor = batch.inpaint_tensor
+            if inpaint_tensor.shape[1] == 4:
+                # Existing inpaint tensors use alpha 1 as keep area, so invert for
+                # Diffusers' inpaint convention where 1 is the generated area.
+                mask = 1 - inpaint_tensor[:, 3:4, :, :]
+            else:
+                mask = inpaint_tensor[:, :1, :, :]
+
+        if mask is None:
+            mask = torch.ones(latents.shape[0], 1, latents.shape[2], latents.shape[3], device=latents.device)
+
+        mask = mask.to(latents.device, dtype=latents.dtype)
+        if mask.shape[-2:] != latents.shape[-2:]:
+            mask = F.interpolate(mask, size=latents.shape[-2:], mode="nearest")
+        return mask
+
+    def _encode_control_tensor(self, tensor: torch.Tensor, target_hw, device, dtype):
+        self.vae.to(self.vae_device_torch, dtype=self.torch_dtype)
+        tensor = tensor.to(self.vae_device_torch, dtype=self.torch_dtype)
+        if tensor.shape[-2:] != target_hw:
+            tensor = F.interpolate(tensor, size=target_hw, mode="bilinear", align_corners=False)
+        tensor = tensor * 2 - 1
+        latent = self.encode_images(tensor).to(device, dtype=dtype)
+        return latent
+
+    def build_controlnet_condition(self, latents: torch.Tensor, batch):
+        if F is None:
+            raise ImportError("torch.nn.functional is required for Z-Image ControlNet conditioning")
+
+        with torch.no_grad():
+            target_hw = None
+            if getattr(batch, "tensor", None) is not None:
+                target_hw = batch.tensor.shape[-2:]
+            else:
+                target_hw = (batch.file_items[0].crop_height, batch.file_items[0].crop_width)
+
+            control_tensor = getattr(batch, "control_tensor", None)
+            if control_tensor is None:
+                masked_image_latents = latents
+            else:
+                control_tensor = control_tensor[:, :3, :, :]
+                masked_image_latents = self._encode_control_tensor(
+                    control_tensor,
+                    target_hw,
+                    latents.device,
+                    latents.dtype,
+                )
+
+            control_latents = masked_image_latents.unsqueeze(2)
+
+            mask = self._get_mask_for_batch(batch, latents)
+            # Diffusers ZImageControlNetInpaintPipeline inverts the mask before
+            # passing it to ControlNet: 1 means keep/preserved region here.
+            keep_mask = 1 - mask
+            keep_mask = F.interpolate(keep_mask, size=masked_image_latents.shape[-2:], mode="nearest")
+            keep_mask = keep_mask.to(latents.device, dtype=latents.dtype).unsqueeze(2)
+
+            masked_image_latents = (masked_image_latents * keep_mask.squeeze(2)).unsqueeze(2)
+
+            return torch.cat([control_latents, keep_mask, masked_image_latents], dim=1)
+
+    def get_controlnet_block_samples(
+        self,
+        latent_model_input: torch.Tensor,
+        timestep: torch.Tensor,
+        text_embeddings: PromptEmbeds,
+        batch,
+        controlnet: ZImageControlNetModel,
+        conditioning_scale: float = 1.0,
+    ):
+        control_dtype = controlnet.dtype
+        control_image_input = self.build_controlnet_condition(latent_model_input, batch).to(
+            self.device_torch, dtype=control_dtype
+        )
+        latent_model_input = latent_model_input.to(self.device_torch, dtype=control_dtype).unsqueeze(2)
+        latent_model_input_list = list(latent_model_input.unbind(dim=0))
+        timestep_model_input = (1000 - timestep) / 1000
+        return controlnet(
+            latent_model_input_list,
+            timestep_model_input,
+            text_embeddings.text_embeds,
+            control_image_input,
+            conditioning_scale=conditioning_scale,
+        )
 
     def get_noise_prediction(
         self,
         latent_model_input: torch.Tensor,
         timestep: torch.Tensor,  # 0 to 1000 scale
         text_embeddings: PromptEmbeds,
+        controlnet_block_samples=None,
         **kwargs,
     ):
-        self.model.to(self.device_torch)
-
         latent_model_input = latent_model_input.unsqueeze(2)
         latent_model_input_list = list(latent_model_input.unbind(dim=0))
 
@@ -337,6 +487,7 @@ class ZImageModel(BaseModel):
             latent_model_input_list,
             timestep_model_input,
             text_embeddings.text_embeds,
+            controlnet_block_samples=controlnet_block_samples,
         )[0]
 
         noise_pred = torch.stack([t.float() for t in model_out_list], dim=0)

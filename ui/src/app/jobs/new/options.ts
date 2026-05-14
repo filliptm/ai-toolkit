@@ -7,6 +7,7 @@ type Control = 'depth' | 'line' | 'pose' | 'inpaint';
 type DisableableSections =
   | 'model.quantize'
   | 'model.quantize_te'
+  | 'network'
   | 'train.timestep_type'
   | 'network.conv'
   | 'trigger_word'
@@ -29,6 +30,7 @@ type AdditionalSections =
   | 'sample.mask_img'
   | 'sample.reference_img'
   | 'sample.multi_ctrl_imgs'
+  | 'adapter.name_or_path'
   | 'train.audio_loss_multiplier'
   | 'datasets.num_frames'
   | 'model.multistage'
@@ -88,6 +90,20 @@ export const findModelArch = (archName: string, nameOrPath?: string | null): Mod
 
 const defaultNameOrPath = '';
 const defaultLinearRank = 32
+const defaultNetworkConfig = {
+  type: 'lora',
+  linear: 32,
+  linear_alpha: 32,
+  conv: 16,
+  conv_alpha: 16,
+  lokr_full_rank: true,
+  lokr_factor: -1,
+  network_kwargs: {
+    ignore_if_contains: [],
+  },
+};
+const zImageControlNetUnionPath =
+  'https://huggingface.co/alibaba-pai/Z-Image-Turbo-Fun-Controlnet-Union-2.1/resolve/main/Z-Image-Turbo-Fun-Controlnet-Union-2.1-lite-2602-8steps.safetensors';
 
 export const modelArchs: ModelArch[] = [
   {
@@ -716,6 +732,48 @@ export const modelArchs: ModelArch[] = [
     },
     disableSections: ['network.conv'],
     additionalSections: ['model.low_vram', 'model.layer_offloading', 'model.assistant_lora_path'],
+  },
+  {
+    name: 'zimage:turbo-outpaint-controlnet',
+    label: 'Z-Image Turbo Outpaint ControlNet',
+    group: 'image',
+    defaults: {
+      // default updates when [selected, unselected] in the UI
+      'config.process[0].model.name_or_path': ['Tongyi-MAI/Z-Image-Turbo', defaultNameOrPath],
+      'config.process[0].model.quantize': [true, false],
+      'config.process[0].model.quantize_te': [true, false],
+      'config.process[0].model.low_vram': [true, false],
+      'config.process[0].train.unload_text_encoder': [false, false],
+      'config.process[0].sample.sampler': ['flowmatch', 'flowmatch'],
+      'config.process[0].train.noise_scheduler': ['flowmatch', 'flowmatch'],
+      'config.process[0].train.timestep_type': ['weighted', 'sigmoid'],
+      'config.process[0].model.qtype': ['qfloat8', 'qfloat8'],
+      'config.process[0].sample.guidance_scale': [1, 4],
+      'config.process[0].sample.sample_steps': [8, 25],
+      'config.process[0].adapter': [
+        {
+          type: 'zimage_controlnet',
+          name_or_path: zImageControlNetUnionPath,
+          train: true,
+          control_in_dim: 33,
+        },
+        undefined,
+      ],
+      'config.process[0].network': [undefined, defaultNetworkConfig],
+      'config.process[0].train.train_unet': [false, true],
+      'config.process[0].train.adapter_lr': [0.00002, undefined],
+      'config.process[0].datasets[x].cache_latents_to_disk': [true, false],
+    },
+    disableSections: ['network'],
+    additionalSections: [
+      'datasets.control_path',
+      'datasets.mask_path',
+      'sample.ctrl_img',
+      'sample.mask_img',
+      'adapter.name_or_path',
+      'model.low_vram',
+      'model.layer_offloading',
+    ],
   },
   {
     name: 'zimage',

@@ -121,6 +121,9 @@ export default function SimpleJob({
 
   const numTopCards = useMemo(() => {
     let count = 4; // job settings, model config, target config, save config
+    if (disableSections.includes('network')) {
+      count -= 1;
+    }
     if (modelArch?.additionalSections?.includes('model.multistage')) {
       count += 1; // add multistage card
     }
@@ -307,6 +310,21 @@ export default function SimpleJob({
                 placeholder=""
               />
             )}
+            {modelArch?.additionalSections?.includes('adapter.name_or_path') && (
+              <TextInput
+                label="ControlNet Path"
+                value={jobConfig.config.process[0].adapter?.name_or_path ?? ''}
+                docKey="config.process[0].adapter.name_or_path"
+                onChange={(value: string | null) => {
+                  if (value?.trim() === '') {
+                    value = null;
+                  }
+                  setJobConfig(value, 'config.process[0].adapter.name_or_path');
+                }}
+                placeholder=""
+                required
+              />
+            )}
             {modelArch?.additionalSections?.includes('model.low_vram') && (
               <FormGroup label="Options">
                 <Checkbox
@@ -428,62 +446,64 @@ export default function SimpleJob({
               />
             </Card>
           )}
-          <Card title="Target">
-            <SelectInput
-              label="Target Type"
-              value={jobConfig.config.process[0].network?.type ?? 'lora'}
-              onChange={value => setJobConfig(value, 'config.process[0].network.type')}
-              options={[
-                { value: 'lora', label: 'LoRA' },
-                { value: 'lokr', label: 'LoKr' },
-              ]}
-            />
-            {jobConfig.config.process[0].network?.type == 'lokr' && (
+          {!disableSections.includes('network') && (
+            <Card title="Target">
               <SelectInput
-                label="LoKr Factor"
-                value={`${jobConfig.config.process[0].network?.lokr_factor ?? -1}`}
-                onChange={value => setJobConfig(parseInt(value), 'config.process[0].network.lokr_factor')}
+                label="Target Type"
+                value={jobConfig.config.process[0].network?.type ?? 'lora'}
+                onChange={value => setJobConfig(value, 'config.process[0].network.type')}
                 options={[
-                  { value: '-1', label: 'Auto' },
-                  { value: '4', label: '4' },
-                  { value: '8', label: '8' },
-                  { value: '16', label: '16' },
-                  { value: '32', label: '32' },
+                  { value: 'lora', label: 'LoRA' },
+                  { value: 'lokr', label: 'LoKr' },
                 ]}
               />
-            )}
-            {jobConfig.config.process[0].network?.type == 'lora' && (
-              <>
-                <NumberInput
-                  label="Linear Rank"
-                  value={jobConfig.config.process[0].network.linear}
-                  onChange={value => {
-                    console.log('onChange', value);
-                    setJobConfig(value, 'config.process[0].network.linear');
-                    setJobConfig(value, 'config.process[0].network.linear_alpha');
-                  }}
-                  placeholder="eg. 16"
-                  min={0}
-                  max={1024}
-                  required
+              {jobConfig.config.process[0].network?.type == 'lokr' && (
+                <SelectInput
+                  label="LoKr Factor"
+                  value={`${jobConfig.config.process[0].network?.lokr_factor ?? -1}`}
+                  onChange={value => setJobConfig(parseInt(value), 'config.process[0].network.lokr_factor')}
+                  options={[
+                    { value: '-1', label: 'Auto' },
+                    { value: '4', label: '4' },
+                    { value: '8', label: '8' },
+                    { value: '16', label: '16' },
+                    { value: '32', label: '32' },
+                  ]}
                 />
-                {disableSections.includes('network.conv') ? null : (
+              )}
+              {jobConfig.config.process[0].network?.type == 'lora' && jobConfig.config.process[0].network && (
+                <>
                   <NumberInput
-                    label="Conv Rank"
-                    value={jobConfig.config.process[0].network.conv}
+                    label="Linear Rank"
+                    value={jobConfig.config.process[0].network.linear}
                     onChange={value => {
                       console.log('onChange', value);
-                      setJobConfig(value, 'config.process[0].network.conv');
-                      setJobConfig(value, 'config.process[0].network.conv_alpha');
+                      setJobConfig(value, 'config.process[0].network.linear');
+                      setJobConfig(value, 'config.process[0].network.linear_alpha');
                     }}
                     placeholder="eg. 16"
                     min={0}
                     max={1024}
+                    required
                   />
-                )}
-              </>
-            )}
-          </Card>
+                  {disableSections.includes('network.conv') ? null : (
+                    <NumberInput
+                      label="Conv Rank"
+                      value={jobConfig.config.process[0].network.conv}
+                      onChange={value => {
+                        console.log('onChange', value);
+                        setJobConfig(value, 'config.process[0].network.conv');
+                        setJobConfig(value, 'config.process[0].network.conv_alpha');
+                      }}
+                      placeholder="eg. 16"
+                      min={0}
+                      max={1024}
+                    />
+                  )}
+                </>
+              )}
+            </Card>
+          )}
           {!disableSections.includes('slider') && (
             <Card title="Slider">
               <TextInput

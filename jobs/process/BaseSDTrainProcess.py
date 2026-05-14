@@ -577,6 +577,8 @@ class BaseSDTrainProcess(BaseTrainProcess):
                         adapter_name += '_t2i'
                     elif self.adapter_config.type == 'control_net':
                         adapter_name += '_cn'
+                    elif self.adapter_config.type == 'zimage_controlnet':
+                        adapter_name += '_zicn'
                     elif self.adapter_config.type == 'clip':
                         adapter_name += '_clip'
                     elif self.adapter_config.type.startswith('ip'):
@@ -611,6 +613,20 @@ class BaseSDTrainProcess(BaseTrainProcess):
                     with open(meta_path, 'w') as f:
                         yaml.dump(self.meta, f)
                     # move it back
+                    self.adapter = self.adapter.to(orig_device, dtype=orig_dtype)
+                elif self.adapter_config.type == 'zimage_controlnet':
+                    name_or_path = file_path.replace('.safetensors', '')
+                    orig_device = self.adapter.device
+                    orig_dtype = self.adapter.dtype
+                    self.adapter = self.adapter.to(torch.device('cpu'), dtype=get_torch_dtype(self.save_config.dtype))
+                    self.adapter.save_pretrained(
+                        name_or_path,
+                        dtype=get_torch_dtype(self.save_config.dtype),
+                        safe_serialization=True
+                    )
+                    meta_path = os.path.join(name_or_path, 'aitk_meta.yaml')
+                    with open(meta_path, 'w') as f:
+                        yaml.dump(self.meta, f)
                     self.adapter = self.adapter.to(orig_device, dtype=orig_dtype)
                 else:
                     direct_save = False
@@ -1457,10 +1473,13 @@ class BaseSDTrainProcess(BaseTrainProcess):
         # t2i adapter
         is_t2i = self.adapter_config.type == 't2i'
         is_control_net = self.adapter_config.type == 'control_net'
+        is_zimage_controlnet = self.adapter_config.type == 'zimage_controlnet'
         if self.adapter_config.type == 't2i':
             suffix = 't2i'
         elif self.adapter_config.type == 'control_net':
             suffix = 'cn'
+        elif self.adapter_config.type == 'zimage_controlnet':
+            suffix = 'zicn'
         elif self.adapter_config.type == 'clip':
             suffix = 'clip'
         elif self.adapter_config.type == 'reference':
@@ -1507,6 +1526,51 @@ class BaseSDTrainProcess(BaseTrainProcess):
                 load_from_path,
                 torch_dtype=get_torch_dtype(self.train_config.dtype),
             )
+        elif is_zimage_controlnet:
+            if self.adapter_config.name_or_path is None:
+                raise ValueError("Z-Image ControlNet requires adapter.name_or_path")
+            from diffusers.models.controlnets import ZImageControlNetModel
+            load_from_path = latest_save_path if latest_save_path is not None else self.adapter_config.name_or_path
+            if (
+                    isinstance(load_from_path, str)
+                    and load_from_path.startswith("https://huggingface.co/")
+                    and "/resolve/" in load_from_path
+            ):
+                from huggingface_hub import hf_hub_download
+                from urllib.parse import unquote, urlparse
+
+                path_parts = urlparse(load_from_path).path.strip("/").split("/")
+                resolve_idx = path_parts.index("resolve")
+                repo_id = "/".join(path_parts[:resolve_idx])
+                revision = path_parts[resolve_idx + 1]
+                filename = unquote("/".join(path_parts[resolve_idx + 2:]))
+                load_from_path = hf_hub_download(
+                    repo_id=repo_id,
+                    filename=filename,
+                    revision=revision,
+                )
+            if os.path.isdir(load_from_path):
+                self.adapter = ZImageControlNetModel.from_pretrained(
+                    load_from_path,
+                    torch_dtype=get_torch_dtype(self.train_config.dtype),
+                )
+            else:
+                control_in_dim = getattr(self.adapter_config, 'control_in_dim', None)
+                if control_in_dim is None:
+                    control_in_dim = 33
+                self.adapter = ZImageControlNetModel.from_single_file(
+                    load_from_path,
+                    torch_dtype=get_torch_dtype(self.train_config.dtype),
+                    control_in_dim=control_in_dim,
+                    low_cpu_mem_usage=False,
+                )
+            if hasattr(self.sd, "attach_controlnet"):
+                self.sd.attach_controlnet(self.adapter)
+                self.adapter = self.sd.controlnet
+            if not hasattr(self.adapter, "gradient_checkpointing"):
+                self.adapter.gradient_checkpointing = False
+            for name, param in self.adapter.named_parameters():
+                param.requires_grad_(name.startswith("control_"))
         elif self.adapter_config.type == 'clip':
             self.adapter = ClipVisionAdapter(
                 sd=self.sd,
@@ -1531,7 +1595,7 @@ class BaseSDTrainProcess(BaseTrainProcess):
                 train_config=self.train_config,
             )
         self.adapter.to(self.device_torch, dtype=dtype)
-        if latest_save_path is not None and not is_control_net:
+        if latest_save_path is not None and not is_control_net and not is_zimage_controlnet:
             # load adapter from path
             print_acc(f"Loading adapter from {latest_save_path}")
             if is_t2i:
@@ -1927,6 +1991,14 @@ class BaseSDTrainProcess(BaseTrainProcess):
                         adapter_param_groups = self.adapter.get_parameter_groups(self.train_config.adapter_lr)
                         for group in adapter_param_groups:
                             params.append(group)
+                    elif self.adapter.__class__.__name__ == "ZImageControlNetModel":
+                        params.append({
+                            'params': [
+                                p for n, p in self.adapter.named_parameters()
+                                if n.startswith("control_") and p.requires_grad
+                            ],
+                            'lr': self.train_config.adapter_lr
+                        })
                     else:
                         # set trainable params
                         params.append({
@@ -1934,7 +2006,7 @@ class BaseSDTrainProcess(BaseTrainProcess):
                             'lr': self.train_config.adapter_lr
                         })
 
-                if self.train_config.gradient_checkpointing:
+                if self.train_config.gradient_checkpointing and self.adapter.__class__.__name__ != "ZImageControlNetModel":
                     self.adapter.enable_gradient_checkpointing()
                 flush()
 
