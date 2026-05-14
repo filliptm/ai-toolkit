@@ -31,6 +31,37 @@ function closeDb(db: sqlite3.Database) {
   });
 }
 
+function parseLossPointsFromLog(logPath: string, key: string, sinceStep: number | null, stride: number, limit: number) {
+  if (key !== 'loss') {
+    return { keys: ['loss'], points: [] };
+  }
+
+  const text = fs.readFileSync(logPath, 'utf8');
+  const lossByStep = new Map<number, number>();
+  const re = /\|\s*(\d+)\/\d+[\s\S]{0,240}?\bloss:\s*([-+]?\d+(?:\.\d+)?(?:e[-+]?\d+)?)/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = re.exec(text)) !== null) {
+    const step = Number(match[1]);
+    const value = Number(match[2]);
+    if (!Number.isFinite(step) || !Number.isFinite(value)) continue;
+    if (sinceStep !== null && step <= sinceStep) continue;
+    if (step % stride !== 0) continue;
+    lossByStep.set(step, value);
+  }
+
+  const points = Array.from(lossByStep.entries())
+    .sort((a, b) => a[0] - b[0])
+    .slice(-limit)
+    .map(([step, value]) => ({
+      step,
+      wall_time: 0,
+      value,
+    }));
+
+  return { keys: ['loss'], points };
+}
+
 export async function GET(request: NextRequest, { params }: { params: { jobID: string } }) {
   // this must be awaited to avoid TS error
   const { jobID } = await params;
@@ -42,16 +73,21 @@ export async function GET(request: NextRequest, { params }: { params: { jobID: s
   const jobFolder = path.join(trainingFolder, job.name);
   const logPath = path.join(jobFolder, 'loss_log.db');
 
-  if (!fs.existsSync(logPath)) {
-    return NextResponse.json({ keys: [], key: 'loss', points: [] });
-  }
-
   const url = new URL(request.url);
   const key = url.searchParams.get('key') ?? 'loss';
   const limit = Math.min(Number(url.searchParams.get('limit') ?? 2000), 20000);
   const sinceStepParam = url.searchParams.get('since_step');
   const sinceStep = sinceStepParam != null ? Number(sinceStepParam) : null;
   const stride = Math.max(1, Number(url.searchParams.get('stride') ?? 1));
+
+  if (!fs.existsSync(logPath)) {
+    const textLogPath = path.join(jobFolder, 'log.txt');
+    if (fs.existsSync(textLogPath)) {
+      const fallback = parseLossPointsFromLog(textLogPath, key, sinceStep, stride, limit);
+      return NextResponse.json({ key, ...fallback });
+    }
+    return NextResponse.json({ keys: [], key, points: [] });
+  }
 
   const db = openDb(logPath);
 
