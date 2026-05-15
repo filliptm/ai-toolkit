@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Job View Layout Mockups</title>
+  <style>
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #0b0d10;
+      color: #eef2f7;
+      font-family: Arial, Helvetica, sans-serif;
+      display: grid;
+      place-items: center;
+    }
+
+    main {
+      width: min(920px, calc(100vw - 32px));
+      display: grid;
+      gap: 14px;
+    }
+
+    h1 { margin: 0 0 6px; font-size: 24px; }
+    p { margin: 0 0 18px; color: #9aa6b2; }
+
+    .links {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    a {
+      display: block;
+      padding: 18px;
+      border-radius: 8px;
+      border: 1px solid #2b3340;
+      background: #15191f;
+      color: #eef2f7;
+      text-decoration: none;
+    }
+
+    a strong { display: block; margin-bottom: 8px; }
+    a span { color: #9aa6b2; font-size: 13px; line-height: 1.35; }
+
+    @media (max-width: 760px) {
+      .links { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div>
+      <h1>Unified Job View Layouts</h1>
+      <p>Three static directions for merging overview, samples, loss, terminal, and config into one job screen.</p>
+    </div>
+    <section class="links">
+      <a href="./option-1-command-board.html">
+        <strong>Option 1: Command Board</strong>
+        <span>Dense metrics across the top, samples and loss above a full-width terminal.</span>
+      </a>
+      <a href="./option-2-sample-first.html">
+        <strong>Option 2: Sample First</strong>
+        <span>Prioritizes a large current sample, with loss and compact config on the side.</span>
+      </a>
+      <a href="./option-3-operator-console.html">
+        <strong>Option 3: Operator Console</strong>
+        <span>Persistent left rail for compact stats, four main work surfaces in a grid.</span>
+      </a>
+    </section>
+  </main>
+</body>
+</html>

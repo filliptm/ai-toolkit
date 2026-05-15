@@ -17,6 +17,7 @@ from optimum.quanto import freeze
 from toolkit.util.quantize import quantize, get_qtype, quantize_model
 from toolkit.memory_management import MemoryManager
 from safetensors.torch import load_file
+from diffusers.utils.torch_utils import randn_tensor
 
 from transformers import AutoTokenizer, Qwen3ForCausalLM
 from diffusers import AutoencoderKL
@@ -345,6 +346,21 @@ class ZImageModel(BaseModel):
             if mask_img.size != (gen_config.width, gen_config.height):
                 mask_img = mask_img.resize((gen_config.width, gen_config.height), Image.NEAREST)
 
+            latents, preserve_latents, edit_mask = self._prepare_masked_sample_latents(
+                pipeline=pipeline,
+                image=init_img,
+                mask_image=mask_img,
+                width=gen_config.width,
+                height=gen_config.height,
+                generator=generator,
+                latents=gen_config.latents,
+            )
+
+            def preserve_known_latents(_pipeline, _step_index, _timestep, callback_kwargs):
+                step_latents = callback_kwargs["latents"]
+                callback_kwargs["latents"] = step_latents * edit_mask + preserve_latents * (1 - edit_mask)
+                return callback_kwargs
+
             img = pipeline(
                 image=init_img,
                 mask_image=mask_img,
@@ -356,10 +372,12 @@ class ZImageModel(BaseModel):
                 num_inference_steps=gen_config.num_inference_steps,
                 guidance_scale=gen_config.guidance_scale,
                 controlnet_conditioning_scale=gen_config.adapter_conditioning_scale,
-                latents=gen_config.latents,
+                latents=latents,
                 generator=generator,
+                callback_on_step_end=preserve_known_latents,
                 **extra,
             ).images[0]
+            img = Image.composite(img, init_img, mask_img)
         else:
             img = pipeline(
                 prompt_embeds=conditional_embeds.text_embeds,
@@ -400,6 +418,82 @@ class ZImageModel(BaseModel):
         if mask.shape[-2:] != latents.shape[-2:]:
             mask = F.interpolate(mask, size=latents.shape[-2:], mode="nearest")
         return mask
+
+    def _compose_masked_latents(self, noisy_latents: torch.Tensor, batch):
+        if F is None:
+            raise ImportError("torch.nn.functional is required for Z-Image masked latent conditioning")
+        if self.controlnet is None:
+            return noisy_latents
+        if getattr(batch, "latents", None) is None:
+            return noisy_latents
+        if getattr(batch, "mask_tensor", None) is None and getattr(batch, "inpaint_tensor", None) is None:
+            return noisy_latents
+
+        edit_mask = self._get_mask_for_batch(batch, noisy_latents)
+        clean_latents = batch.latents.to(noisy_latents.device, dtype=noisy_latents.dtype)
+        if clean_latents.shape[-2:] != noisy_latents.shape[-2:]:
+            clean_latents = F.interpolate(
+                clean_latents,
+                size=noisy_latents.shape[-2:],
+                mode="bilinear",
+                align_corners=False,
+            )
+        return noisy_latents * edit_mask + clean_latents * (1 - edit_mask)
+
+    def condition_noisy_latents(self, latents: torch.Tensor, batch):
+        return self._compose_masked_latents(latents, batch)
+
+    def _prepare_masked_sample_latents(
+        self,
+        pipeline: ZImageControlNetInpaintPipeline,
+        image: Image.Image,
+        mask_image: Image.Image,
+        width: int,
+        height: int,
+        generator: torch.Generator,
+        latents: Optional[torch.Tensor] = None,
+    ):
+        device = self.device_torch
+        init_image = pipeline.prepare_image(
+            image=image,
+            width=width,
+            height=height,
+            batch_size=1,
+            num_images_per_prompt=1,
+            device=device,
+            dtype=self.vae.dtype,
+        )
+        mask_condition = pipeline.mask_processor.preprocess(mask_image, height=height, width=width)
+        mask_condition = mask_condition.to(device=device, dtype=init_image.dtype)
+        init_image = init_image * (mask_condition < 0.5)
+
+        self.vae.to(self.vae_device_torch, dtype=self.torch_dtype)
+        init_image = init_image.to(self.vae_device_torch, dtype=self.torch_dtype)
+        encoded = self.vae.encode(init_image)
+        if hasattr(encoded, "latent_dist"):
+            preserve_latents = encoded.latent_dist.mode()
+        elif hasattr(encoded, "latents"):
+            preserve_latents = encoded.latents
+        else:
+            raise AttributeError("Could not access latents of provided encoder output")
+        preserve_latents = (preserve_latents - self.vae.config.shift_factor) * self.vae.config.scaling_factor
+        preserve_latents = preserve_latents.to(device=device, dtype=torch.float32)
+
+        edit_mask = F.interpolate(
+            mask_condition[:, :1].to(device=device, dtype=torch.float32),
+            size=preserve_latents.shape[-2:],
+            mode="nearest",
+        )
+
+        if latents is None:
+            latents = randn_tensor(preserve_latents.shape, generator=generator, device=device, dtype=torch.float32)
+        else:
+            if latents.shape != preserve_latents.shape:
+                raise ValueError(f"Unexpected latents shape, got {latents.shape}, expected {preserve_latents.shape}")
+            latents = latents.to(device=device, dtype=torch.float32)
+
+        latents = latents * edit_mask + preserve_latents * (1 - edit_mask)
+        return latents, preserve_latents, edit_mask
 
     def _encode_control_tensor(self, tensor: torch.Tensor, target_hw, device, dtype):
         self.vae.to(self.vae_device_torch, dtype=self.torch_dtype)
@@ -456,6 +550,7 @@ class ZImageModel(BaseModel):
         conditioning_scale: float = 1.0,
     ):
         control_dtype = controlnet.dtype
+        latent_model_input = self._compose_masked_latents(latent_model_input, batch)
         control_image_input = self.build_controlnet_condition(latent_model_input, batch).to(
             self.device_torch, dtype=control_dtype
         )

@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Job View Option 1 - Command Board</title>
+  <style>
+    :root {
+      --bg: #0b0d10;
+      --panel: #15191f;
+      --panel-2: #1d232c;
+      --panel-3: #101318;
+      --line: #2b3340;
+      --text: #eef2f7;
+      --muted: #9aa6b2;
+      --green: #22c55e;
+      --blue: #3b82f6;
+      --amber: #f59e0b;
+      --rose: #f43f5e;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Arial, Helvetica, sans-serif;
+      letter-spacing: 0;
+    }
+
+    .app {
+      height: 100vh;
+      display: grid;
+      grid-template-rows: 52px 1fr;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      padding: 0 18px;
+      border-bottom: 1px solid var(--line);
+      background: #12161c;
+    }
+
+    .back { color: var(--muted); font-size: 20px; }
+    .title { font-size: 16px; font-weight: 700; white-space: nowrap; }
+    .status {
+      margin-left: auto;
+      padding: 6px 10px;
+      border-radius: 999px;
+      color: var(--green);
+      background: rgba(34, 197, 94, .12);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    main {
+      min-height: 0;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 12px;
+      padding: 12px;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: 1.6fr repeat(6, minmax(120px, 1fr));
+      gap: 10px;
+    }
+
+    .metric, .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .metric {
+      min-height: 68px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .metric .label { color: var(--muted); font-size: 11px; text-transform: uppercase; }
+    .metric .value { font-size: 18px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .metric .sub { color: var(--muted); font-size: 12px; }
+    .bar { height: 5px; border-radius: 999px; background: #2c3440; overflow: hidden; }
+    .bar > span { display: block; height: 100%; background: var(--blue); }
+    .bar.green > span { background: var(--green); }
+    .bar.amber > span { background: var(--amber); }
+
+    .workspace {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 2.1fr 1.1fr;
+      grid-template-rows: minmax(240px, 42%) minmax(260px, 58%);
+      gap: 12px;
+    }
+
+    .panel {
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .panel-head {
+      height: 38px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      background: var(--panel-2);
+      border-bottom: 1px solid var(--line);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .panel-body { min-height: 0; flex: 1; padding: 12px; }
+
+    .samples {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      height: 100%;
+    }
+
+    .sample {
+      min-width: 0;
+      display: grid;
+      grid-template-rows: 1fr auto;
+      gap: 8px;
+    }
+
+    .sample img {
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      object-fit: cover;
+      border-radius: 6px;
+      background: #0f1115;
+      border: 1px solid #29313d;
+    }
+
+    .sample span { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .loss svg { width: 100%; height: 100%; min-height: 190px; display: block; }
+    .loss-grid { stroke: #2b3340; stroke-width: 1; }
+    .loss-line { fill: none; stroke: #60a5fa; stroke-width: 3; }
+    .loss-line-soft { fill: none; stroke: rgba(96,165,250,.22); stroke-width: 12; }
+
+    .terminal {
+      grid-column: 1 / 3;
+      background: #06080b;
+    }
+
+    .terminal pre {
+      margin: 0;
+      color: #d8dee9;
+      font: 12px/1.55 Consolas, "Courier New", monospace;
+      white-space: pre-wrap;
+    }
+
+    .side-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .file {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      background: var(--panel-3);
+      border: 1px solid #252c36;
+      font-size: 12px;
+    }
+
+    .file span:last-child { color: var(--muted); }
+
+    @media (max-width: 1200px) {
+      .metrics { grid-template-columns: repeat(3, 1fr); }
+      .workspace { grid-template-columns: 1fr; grid-template-rows: auto auto minmax(360px, 1fr) auto; }
+      .terminal { grid-column: auto; }
+      .samples { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="back">‹</div>
+      <div class="title">zimage_green_outpaint_4k</div>
+      <div class="status">Running</div>
+    </header>
+
+    <main>
+      <section class="metrics">
+        <div class="metric">
+          <div class="label">Progress</div>
+          <div class="value">4,889 / 8,000</div>
+          <div class="bar"><span style="width:61%"></span></div>
+        </div>
+        <div class="metric">
+          <div class="label">Speed</div>
+          <div class="value">7.42 sec/iter</div>
+          <div class="sub">ETA 6h 24m</div>
+        </div>
+        <div class="metric">
+          <div class="label">GPU</div>
+          <div class="value">92%</div>
+          <div class="bar green"><span style="width:92%"></span></div>
+        </div>
+        <div class="metric">
+          <div class="label">VRAM</div>
+          <div class="value">22.7 / 24 GB</div>
+          <div class="bar amber"><span style="width:94%"></span></div>
+        </div>
+        <div class="metric">
+          <div class="label">Loss</div>
+          <div class="value">0.441</div>
+          <div class="sub">EMA 0.396</div>
+        </div>
+        <div class="metric">
+          <div class="label">Checkpoint</div>
+          <div class="value">004500</div>
+          <div class="sub">next at 5000</div>
+        </div>
+        <div class="metric">
+          <div class="label">Samples</div>
+          <div class="value">4 latest</div>
+          <div class="sub">masked latent</div>
+        </div>
+      </section>
+
+      <section class="workspace">
+        <section class="panel">
+          <div class="panel-head"><span>Samples</span><span>Step 4500</span></div>
+          <div class="panel-body samples">
+            <div class="sample"><img src="../../output/zimage_green_outpaint_4k/samples/1778822246253__000004500_0.jpg" /><span>Landscape all edges</span></div>
+            <div class="sample"><img src="../../output/zimage_green_outpaint_4k/samples/1778822258397__000004500_1.jpg" /><span>Landscape left/right</span></div>
+            <div class="sample"><img src="../../output/zimage_green_outpaint_4k/samples/1778822270507__000004500_2.jpg" /><span>Portrait all edges</span></div>
+            <div class="sample"><img src="../../output/zimage_green_outpaint_4k/samples/1778822282781__000004500_3.jpg" /><span>Portrait top/bottom</span></div>
+          </div>
+        </section>
+
+        <section class="panel loss">
+          <div class="panel-head"><span>Loss Graph</span><span>0.20-1.02</span></div>
+          <div class="panel-body">
+            <svg viewBox="0 0 520 240" preserveAspectRatio="none">
+              <path class="loss-grid" d="M0 40H520 M0 90H520 M0 140H520 M0 190H520 M60 0V240 M170 0V240 M280 0V240 M390 0V240" />
+              <polyline class="loss-line-soft" points="0,170 40,156 80,48 120,135 160,106 200,122 240,96 280,142 320,114 360,128 400,102 440,151 480,118 520,132" />
+              <polyline class="loss-line" points="0,170 40,156 80,48 120,135 160,106 200,122 240,96 280,142 320,114 360,128 400,102 440,151 480,118 520,132" />
+            </svg>
+          </div>
+        </section>
+
+        <section class="panel terminal">
+          <div class="panel-head"><span>Terminal</span><span>auto-scroll locked</span></div>
+          <div class="panel-body">
+<pre>zimage_green_outpaint_4k:  61%|######1   | 4887/8000 [10:10&lt;6:26:22,  7.45s/it, lr: 2.0e-05 loss: 3.98e-01]
+zimage_green_outpaint_4k:  61%|######1   | 4888/8000 [10:17&lt;6:25:48,  7.44s/it, lr: 2.0e-05 loss: 4.41e-01]
+zimage_green_outpaint_4k:  61%|######1   | 4889/8000 [10:24&lt;6:24:55,  7.42s/it, lr: 2.0e-05 loss: 3.76e-01]
+Saving at step 4500
+Generating Samples: 100%|##########| 4/4 [00:49&lt;00:00, 12.35s/it]
+Training</pre>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><span>Config & Checkpoints</span><span>compact</span></div>
+          <div class="panel-body side-list">
+            <div class="file"><span>zimage_green_outpaint_4k_000004500</span><span>3.6 GB</span></div>
+            <div class="file"><span>zimage_green_outpaint_4k_000004000</span><span>3.6 GB</span></div>
+            <div class="file"><span>masked latent training</span><span>on</span></div>
+            <div class="file"><span>start step</span><span>4000</span></div>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

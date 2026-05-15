@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Job View Option 3 - Operator Console</title>
+  <style>
+    :root {
+      --bg: #090b0f;
+      --panel: #141922;
+      --panel-2: #1f2632;
+      --panel-3: #10141b;
+      --line: #2d3746;
+      --text: #edf2f8;
+      --muted: #96a3b3;
+      --blue: #60a5fa;
+      --green: #34d399;
+      --amber: #fbbf24;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Arial, Helvetica, sans-serif;
+      overflow: hidden;
+    }
+
+    .layout {
+      height: 100vh;
+      display: grid;
+      grid-template-columns: 260px 1fr;
+    }
+
+    aside {
+      min-height: 0;
+      border-right: 1px solid var(--line);
+      background: #11161d;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .brand {
+      height: 42px;
+      display: flex;
+      align-items: center;
+      font-weight: 800;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .compact-card {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 8px;
+      padding: 10px;
+    }
+
+    .compact-card h3 {
+      margin: 0 0 10px;
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    .kv {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 6px 0;
+      border-top: 1px solid rgba(255,255,255,.05);
+      font-size: 12px;
+    }
+
+    .kv:first-of-type { border-top: 0; }
+    .kv span:first-child { color: var(--muted); }
+    .kv span:last-child { font-weight: 700; text-align: right; }
+
+    .bar { height: 5px; border-radius: 999px; background: #2c3544; overflow: hidden; margin-top: 8px; }
+    .bar i { display: block; height: 100%; background: var(--green); }
+
+    main {
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: 52px minmax(0, 1fr);
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      border-bottom: 1px solid var(--line);
+      background: #11161d;
+    }
+
+    header h1 { margin: 0; font-size: 16px; }
+    header .running { margin-left: auto; color: var(--green); background: rgba(52,211,153,.12); padding: 6px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+
+    .grid {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(420px, 1.05fr) minmax(420px, .95fr);
+      grid-template-rows: minmax(280px, .95fr) minmax(320px, 1.05fr);
+      gap: 12px;
+      padding: 12px;
+    }
+
+    .panel {
+      min-height: 0;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 8px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .head {
+      height: 38px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      background: var(--panel-2);
+      border-bottom: 1px solid var(--line);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .body { min-height: 0; flex: 1; padding: 12px; }
+
+    .sample-wall {
+      height: 100%;
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      grid-template-rows: repeat(2, 1fr);
+      gap: 10px;
+    }
+
+    figure {
+      margin: 0;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: 1fr 20px;
+      gap: 6px;
+    }
+
+    figure img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 6px;
+      border: 1px solid #29313d;
+      background: #07090d;
+    }
+
+    figcaption { color: var(--muted); font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+    .terminal {
+      background: #05070a;
+      padding: 12px;
+      overflow: auto;
+      height: 100%;
+    }
+
+    pre {
+      margin: 0;
+      font: 12px/1.55 Consolas, "Courier New", monospace;
+      white-space: pre-wrap;
+      color: #d8dee9;
+    }
+
+    .loss-grid {
+      height: 100%;
+      display: grid;
+      grid-template-rows: 1fr 78px;
+      gap: 12px;
+    }
+
+    svg { width: 100%; height: 100%; display: block; }
+    .chart-grid { stroke: #2d3746; stroke-width: 1; }
+    .chart-line { fill: none; stroke: var(--blue); stroke-width: 3; }
+
+    .micro-stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+
+    .micro {
+      border-radius: 6px;
+      background: var(--panel-3);
+      border: 1px solid #28313e;
+      padding: 8px;
+    }
+
+    .micro span { display: block; color: var(--muted); font-size: 11px; margin-bottom: 4px; }
+    .micro strong { display: block; font-size: 15px; }
+
+    .checkpoints {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+
+    .checkpoint {
+      border-radius: 6px;
+      background: var(--panel-3);
+      border: 1px solid #28313e;
+      padding: 9px;
+      font-size: 12px;
+    }
+
+    .checkpoint strong { display: block; margin-bottom: 4px; }
+    .checkpoint span { color: var(--muted); }
+
+    @media (max-width: 1180px) {
+      body { overflow: auto; height: auto; }
+      .layout { height: auto; min-height: 100vh; grid-template-columns: 1fr; }
+      aside { display: grid; grid-template-columns: repeat(2, 1fr); }
+      .brand { grid-column: 1 / -1; }
+      main { min-height: 900px; }
+      .grid { grid-template-columns: 1fr; grid-template-rows: auto; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside>
+      <div class="brand">Job Console</div>
+      <section class="compact-card">
+        <h3>Run</h3>
+        <div class="kv"><span>Status</span><span>Running</span></div>
+        <div class="kv"><span>Step</span><span>4889 / 8000</span></div>
+        <div class="kv"><span>Speed</span><span>7.42 sec/iter</span></div>
+        <div class="bar"><i style="width:61%"></i></div>
+      </section>
+      <section class="compact-card">
+        <h3>GPU</h3>
+        <div class="kv"><span>Load</span><span>92%</span></div>
+        <div class="kv"><span>VRAM</span><span>22.7 GB</span></div>
+        <div class="kv"><span>Temp</span><span>64°C</span></div>
+      </section>
+      <section class="compact-card">
+        <h3>Config</h3>
+        <div class="kv"><span>Model</span><span>Z-Image</span></div>
+        <div class="kv"><span>Adapter</span><span>ControlNet</span></div>
+        <div class="kv"><span>Masked latent</span><span>on</span></div>
+        <div class="kv"><span>Loss mask</span><span>strict</span></div>
+      </section>
+      <section class="compact-card">
+        <h3>Files</h3>
+        <div class="kv"><span>Latest</span><span>004500</span></div>
+        <div class="kv"><span>Previous</span><span>004000</span></div>
+        <div class="kv"><span>Samples</span><span>4</span></div>
+      </section>
+    </aside>
+
+    <main>
+      <header>
+        <h1>zimage_green_outpaint_4k</h1>
+        <div class="running">Training</div>
+      </header>
+
+      <section class="grid">
+        <section class="panel">
+          <div class="head"><span>Samples</span><span>step 4500</span></div>
+          <div class="body sample-wall">
+            <figure><img src="../../output/zimage_green_outpaint_4k/samples/1778822246253__000004500_0.jpg" /><figcaption>Landscape all edges</figcaption></figure>
+            <figure><img src="../../output/zimage_green_outpaint_4k/samples/1778822258397__000004500_1.jpg" /><figcaption>Landscape left/right</figcaption></figure>
+            <figure><img src="../../output/zimage_green_outpaint_4k/samples/1778822270507__000004500_2.jpg" /><figcaption>Portrait all edges</figcaption></figure>
+            <figure><img src="../../output/zimage_green_outpaint_4k/samples/1778822282781__000004500_3.jpg" /><figcaption>Portrait top/bottom</figcaption></figure>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="head"><span>Loss & Health</span><span>live</span></div>
+          <div class="body loss-grid">
+            <svg viewBox="0 0 520 250" preserveAspectRatio="none">
+              <path class="chart-grid" d="M0 45H520 M0 95H520 M0 145H520 M0 195H520 M80 0V250 M190 0V250 M300 0V250 M410 0V250" />
+              <polyline class="chart-line" points="0,202 40,168 80,60 120,132 160,98 200,120 240,92 280,138 320,110 360,130 400,101 440,150 480,116 520,134" />
+            </svg>
+            <div class="micro-stats">
+              <div class="micro"><span>Loss</span><strong>0.376</strong></div>
+              <div class="micro"><span>EMA</span><strong>0.396</strong></div>
+              <div class="micro"><span>LR</span><strong>2e-5</strong></div>
+              <div class="micro"><span>ETA</span><strong>6h 24m</strong></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="head"><span>Terminal</span><span>tail</span></div>
+          <div class="terminal">
+<pre>zimage_green_outpaint_4k:  61%|######1   | 4886/8000 [10:03&lt;6:27:02,  7.46s/it, lr: 2.0e-05 loss: 5.02e-01]
+zimage_green_outpaint_4k:  61%|######1   | 4887/8000 [10:10&lt;6:26:22,  7.45s/it, lr: 2.0e-05 loss: 3.98e-01]
+zimage_green_outpaint_4k:  61%|######1   | 4888/8000 [10:17&lt;6:25:48,  7.44s/it, lr: 2.0e-05 loss: 4.41e-01]
+zimage_green_outpaint_4k:  61%|######1   | 4889/8000 [10:24&lt;6:24:55,  7.42s/it, lr: 2.0e-05 loss: 3.76e-01]</pre>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="head"><span>Checkpoints</span><span>download</span></div>
+          <div class="body checkpoints">
+            <div class="checkpoint"><strong>000004500</strong><span>latest ControlNet checkpoint</span></div>
+            <div class="checkpoint"><strong>000004000</strong><span>masked-latent resume base</span></div>
+            <div class="checkpoint"><strong>optimizer.pt</strong><span>active optimizer state</span></div>
+            <div class="checkpoint"><strong>config.yaml</strong><span>current job config</span></div>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

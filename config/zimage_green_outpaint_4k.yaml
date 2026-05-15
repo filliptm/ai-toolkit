@@ -18,6 +18,7 @@ config:
         - folder_path: "C:/AI/ai-toolkit/datasets/zimage_green_outpaint_4k/target"
           control_path: "C:/AI/ai-toolkit/datasets/zimage_green_outpaint_4k/control"
           mask_path: "C:/AI/ai-toolkit/datasets/zimage_green_outpaint_4k/mask"
+          mask_min_value: 0.0
           caption_ext: "txt"
           resolution: [1536]
           cache_latents_to_disk: true
@@ -25,6 +26,7 @@ config:
       train:
         batch_size: 1
         steps: 8000
+        start_step: 4000
         gradient_accumulation: 1
         train_unet: false
         train_text_encoder: false
@@ -35,6 +37,7 @@ config:
         adapter_lr: 0.00002
         timestep_type: "weighted"
         skip_first_sample: false
+        force_first_sample: true
         disable_sampling: false
         dtype: bf16
       model:

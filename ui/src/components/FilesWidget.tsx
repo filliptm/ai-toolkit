@@ -2,8 +2,9 @@ import React from 'react';
 import useFilesList from '@/hooks/useFilesList';
 import Link from 'next/link';
 import { Loader2, AlertCircle, Download, Box, Brain } from 'lucide-react';
+import classNames from 'classnames';
 
-export default function FilesWidget({ jobID }: { jobID: string }) {
+export default function FilesWidget({ jobID, className }: { jobID: string; className?: string }) {
   const { files, status, refreshFiles } = useFilesList(jobID, 5000);
 
   const cleanSize = (size: number) => {
@@ -19,7 +20,7 @@ export default function FilesWidget({ jobID }: { jobID: string }) {
   };
 
   return (
-    <div className="col-span-2 bg-gray-900 rounded-xl shadow-lg overflow-hidden border border-gray-800">
+    <div className={classNames('bg-gray-900 rounded-xl shadow-lg overflow-hidden border border-gray-800', className)}>
       <div className="bg-gray-800 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center space-x-2">
           <Brain className="w-5 h-5 text-purple-600 dark:text-purple-400" />
