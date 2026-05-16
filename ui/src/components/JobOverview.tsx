@@ -1,71 +1,268 @@
 import { Job } from '@prisma/client';
 import useGPUInfo from '@/hooks/useGPUInfo';
 import useCPUInfo from '@/hooks/useCPUInfo';
-import GPUWidget from '@/components/GPUWidget';
-import CPUWidget from '@/components/CPUWidget';
-import FilesWidget from '@/components/FilesWidget';
+import useSampleImages from '@/hooks/useSampleImages';
+import useFilesList from '@/hooks/useFilesList';
+import useJobLossLog, { LossPoint } from '@/hooks/useJobLossLog';
 import { getTotalSteps } from '@/utils/jobs';
-import { Cpu, HardDrive, Info, Gauge } from 'lucide-react';
+import { Cpu, HardDrive, Info, Gauge, Activity, ImageIcon, Brain, Terminal } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import useJobLog from '@/hooks/useJobLog';
+import SampleImageViewer from './SampleImageViewer';
+import { JobConfig } from '@/types';
 
 interface JobOverviewProps {
   job: Job;
 }
 
+function formatMemory(mb?: number): string {
+  if (mb == null || !Number.isFinite(mb)) return '?';
+  return mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`;
+}
+
+function cleanSize(size: number) {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  if (size < 1024 * 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(size / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+function getPathParts(filePath: string) {
+  return filePath.split(/[\\/]/).filter(Boolean);
+}
+
+function getFileName(filePath: string) {
+  const parts = getPathParts(filePath);
+  return parts.length > 0 ? parts[parts.length - 1] : filePath;
+}
+
+function getCheckpointName(filePath: string) {
+  const parts = getPathParts(filePath);
+  const fileName = parts.length > 0 ? parts[parts.length - 1] : filePath;
+  if (fileName === 'diffusion_pytorch_model.safetensors' && parts.length > 1) {
+    return parts[parts.length - 2];
+  }
+  return fileName.replace(/\.safetensors$/, '');
+}
+
+function getLatestLossPoint(series: Record<string, LossPoint[]>, lossKeys: string[]) {
+  for (const key of lossKeys) {
+    const points = series[key] ?? [];
+    for (let i = points.length - 1; i >= 0; i--) {
+      const point = points[i];
+      if (point.value != null && Number.isFinite(point.value)) {
+        return point;
+      }
+    }
+  }
+  return null;
+}
+
+function MetricCard({
+  label,
+  value,
+  sub,
+  icon,
+  bar,
+  tone = 'blue',
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  icon?: ReactNode;
+  bar?: number;
+  tone?: 'blue' | 'green' | 'amber';
+}) {
+  const barColor = tone === 'green' ? 'bg-emerald-500' : tone === 'amber' ? 'bg-amber-500' : 'bg-blue-500';
+  return (
+    <div className="bg-gray-900/80 rounded-md border border-gray-800 px-2.5 py-1.5 min-w-0">
+      <div className="flex items-center gap-2 min-w-0">
+        {icon && <div className="text-gray-400 flex-shrink-0">{icon}</div>}
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] uppercase text-gray-400 leading-3 truncate">{label}</p>
+          <p className="text-sm font-semibold text-gray-100 leading-5 truncate">{value}</p>
+        </div>
+      </div>
+      {bar != null && (
+        <div className="mt-1.5 h-1 rounded-full bg-gray-800 overflow-hidden">
+          <div className={`h-full rounded-full ${barColor}`} style={{ width: `${Math.max(0, Math.min(100, bar))}%` }} />
+        </div>
+      )}
+      {sub && <p className="mt-0.5 text-[11px] leading-4 text-gray-400 truncate">{sub}</p>}
+    </div>
+  );
+}
+
+function Panel({
+  title,
+  icon,
+  right,
+  children,
+  className = '',
+  bodyClassName = '',
+}: {
+  title: string;
+  icon?: ReactNode;
+  right?: ReactNode;
+  children: ReactNode;
+  className?: string;
+  bodyClassName?: string;
+}) {
+  return (
+    <section
+      className={`bg-gray-900 rounded-lg shadow-lg overflow-hidden border border-gray-800 flex min-h-0 flex-col ${className}`}
+    >
+      <div className="bg-gray-800 px-3 py-2 flex items-center justify-between gap-3 shrink-0">
+        <h2 className="text-sm font-medium text-gray-100 flex items-center gap-2 min-w-0">
+          {icon}
+          <span className="truncate">{title}</span>
+        </h2>
+        {right && <div className="text-xs text-gray-400 flex-shrink-0">{right}</div>}
+      </div>
+      <div className={`min-h-0 flex-1 ${bodyClassName}`}>{children}</div>
+    </section>
+  );
+}
+
+function LossPreview({
+  series,
+  lossKeys,
+  status,
+}: {
+  series: Record<string, LossPoint[]>;
+  lossKeys: string[];
+  status: string;
+}) {
+  const points = useMemo(() => {
+    const primaryKey = lossKeys[0] ?? 'loss';
+    const raw = (series[primaryKey] ?? []).filter(p => p.value != null && Number.isFinite(p.value));
+    return raw.slice(-120);
+  }, [series, lossKeys]);
+
+  const latest = getLatestLossPoint(series, lossKeys);
+
+  const path = useMemo(() => {
+    if (points.length < 2) return '';
+    const values = points.map(p => p.value as number);
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = max - min || 1;
+    return points
+      .map((point, idx) => {
+        const x = (idx / (points.length - 1)) * 100;
+        const y = 100 - (((point.value as number) - min) / range) * 86 - 7;
+        return `${idx === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${y.toFixed(2)}`;
+      })
+      .join(' ');
+  }, [points]);
+
+  return (
+    <div className="h-full min-h-0 p-3">
+      <div className="bg-gray-950 border border-gray-800 rounded-md relative h-full min-h-[190px] overflow-hidden">
+        {points.length < 2 ? (
+          <div className="absolute inset-0 flex items-center justify-center text-sm text-gray-400">
+            {status === 'error' ? 'Failed to load loss.' : 'Waiting for loss points...'}
+          </div>
+        ) : (
+          <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 h-full w-full">
+            <path
+              d="M0 25H100 M0 50H100 M0 75H100 M25 0V100 M50 0V100 M75 0V100"
+              stroke="rgba(255,255,255,.06)"
+              strokeWidth="0.5"
+            />
+            <path
+              d={path}
+              fill="none"
+              stroke="rgba(96,165,250,1)"
+              strokeWidth="2.4"
+              vectorEffect="non-scaling-stroke"
+            />
+          </svg>
+        )}
+
+        {latest && (
+          <div className="absolute left-2 top-2 rounded-md border border-gray-800 bg-gray-950/85 px-2 py-1 text-xs text-gray-300">
+            <span className="text-gray-500">loss</span> {latest.value?.toPrecision(4)}{' '}
+            <span className="text-gray-500">step</span> {latest.step}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function JobOverview({ job }: JobOverviewProps) {
   const gpuIds = useMemo(() => {
-    if (job.gpu_ids === 'mps') {
-      return [0]; // For MPS, we can just return a single GPU ID since it's virtualized
-    }
+    if (job.gpu_ids === 'mps') return [0];
     return job.gpu_ids.split(',').map(id => parseInt(id));
   }, [job.gpu_ids]);
+
   const { log, status: statusLog } = useJobLog(job.id, 2000);
-  const logRef = useRef<HTMLDivElement>(null);
-  // Track whether we should auto-scroll to bottom
-  const [isScrolledToBottom, setIsScrolledToBottom] = useState(true);
+  const { sampleImages, status: sampleStatus, refreshSampleImages } = useSampleImages(job.id, 5000);
+  const { files } = useFilesList(job.id, 5000);
   const { gpuList, isGPUInfoLoaded } = useGPUInfo(gpuIds, 5000);
-  const { cpuInfo, isCPUInfoLoaded } = useCPUInfo(5000);
+  const { cpuInfo } = useCPUInfo(5000);
+  const { series: lossSeries, lossKeys, status: lossStatus } = useJobLossLog(job.id, 2000);
+
+  const logRef = useRef<HTMLDivElement>(null);
+  const [isScrolledToBottom, setIsScrolledToBottom] = useState(true);
+  const [selectedSamplePath, setSelectedSamplePath] = useState<string | null>(null);
+
   const totalSteps = getTotalSteps(job);
-  const progress = (job.step / totalSteps) * 100;
+  const progress = totalSteps > 0 ? (job.step / totalSteps) * 100 : 0;
   const isStopping = job.stop && job.status === 'running';
+  const jobType = job?.job_type || 'unknown';
+  const status = isStopping ? 'stopping' : job.status;
+  const gpu = isGPUInfoLoaded && gpuList.length > 0 ? gpuList[0] : null;
+
+  const jobConfig = useMemo(() => {
+    if (!job.job_config) return null;
+    try {
+      return JSON.parse(job.job_config) as JobConfig;
+    } catch {
+      return null;
+    }
+  }, [job.job_config]);
+
+  const processConfig = jobConfig?.config?.process?.[0];
+  const sampleConfig = processConfig?.sample ?? null;
+
+  const numSamples = useMemo(() => {
+    const promptCount = sampleConfig?.prompts?.length ?? 0;
+    const sampleCount = sampleConfig?.samples?.length ?? 0;
+    return Math.max(promptCount, sampleCount, 1);
+  }, [sampleConfig]);
+
+  const latestSamples = useMemo(() => {
+    if (sampleImages.length <= numSamples) return sampleImages;
+    return sampleImages.slice(sampleImages.length - numSamples);
+  }, [sampleImages, numSamples]);
 
   const logLines: string[] = useMemo(() => {
-    // split at line breaks on \n or \r\n but not \r
     let splits: string[] = log.split(/\n|\r\n/);
-
-    splits = splits.map(line => {
-      return line.split(/\r/).pop();
-    }) as string[];
-
-    // only return last 100 lines max
+    splits = splits.map(line => line.split(/\r/).pop()) as string[];
     const maxLines = 1000;
-    if (splits.length > maxLines) {
-      splits = splits.slice(splits.length - maxLines);
-    }
-
+    if (splits.length > maxLines) splits = splits.slice(splits.length - maxLines);
     return splits;
   }, [log]);
 
-  // Handle scroll events to determine if user has scrolled away from bottom
+  const latestLoss = getLatestLossPoint(lossSeries, lossKeys);
+
   const handleScroll = () => {
-    if (logRef.current) {
-      const { scrollTop, scrollHeight, clientHeight } = logRef.current;
-      // Consider "at bottom" if within 10 pixels of the bottom
-      const isAtBottom = scrollHeight - scrollTop - clientHeight < 10;
-      setIsScrolledToBottom(isAtBottom);
-    }
+    if (!logRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = logRef.current;
+    setIsScrolledToBottom(scrollHeight - scrollTop - clientHeight < 10);
   };
 
-  // Auto-scroll to bottom only if we were already at the bottom
   useEffect(() => {
     if (logRef.current && isScrolledToBottom) {
       logRef.current.scrollTop = logRef.current.scrollHeight;
     }
   }, [log, isScrolledToBottom]);
 
-  const getStatusColor = (status: string) => {
-    switch (status.toLowerCase()) {
+  const getStatusColor = (value: string) => {
+    switch (value.toLowerCase()) {
       case 'running':
         return 'bg-emerald-500/10 text-emerald-500';
       case 'stopping':
@@ -81,93 +278,156 @@ export default function JobOverview({ job }: JobOverviewProps) {
     }
   };
 
-  const jobType = job?.job_type || 'unknown';
-
-  let status = job.status;
-  if (isStopping) {
-    status = 'stopping';
-  }
-
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4">
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-6">
-        <div className="bg-gray-900 rounded-xl shadow-lg overflow-hidden border border-gray-800 lg:col-span-2 2xl:col-span-2">
-          <div className="bg-gray-800 px-4 py-3 flex items-center justify-between gap-4">
-            <h2 className="text-gray-100 truncate">
-              <Info className="w-5 h-5 mr-2 -mt-1 text-amber-600 dark:text-amber-400 inline-block" /> {job.info}
-            </h2>
-            <span className={`px-3 py-1 rounded-full text-sm flex-shrink-0 ${getStatusColor(status)}`}>{status}</span>
-          </div>
-
-          <div className="p-4 space-y-4">
-            {job.job_type === 'train' && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-400">Progress</span>
-                  <span className="text-gray-200">
-                    Step {job.step} of {totalSteps}
-                  </span>
-                </div>
-                <div className="w-full bg-gray-800 rounded-full h-2">
-                  <div className="h-2 rounded-full bg-blue-500 transition-all" style={{ width: `${progress}%` }} />
-                </div>
-              </div>
-            )}
-
-            <div className="grid gap-4 grid-cols-1 md:grid-cols-3">
-              <div className="flex items-center space-x-4 min-w-0">
-                <HardDrive className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
-                <div className="min-w-0">
-                  <p className="text-xs text-gray-400">Job Name</p>
-                  <p className="text-sm font-medium text-gray-200 truncate">{job.name}</p>
-                </div>
-              </div>
-
-              <div className="flex items-center space-x-4 min-w-0">
-                <Cpu className="w-5 h-5 text-purple-600 dark:text-purple-400 flex-shrink-0" />
-                <div className="min-w-0">
-                  <p className="text-xs text-gray-400">Assigned GPUs</p>
-                  <p className="text-sm font-medium text-gray-200 truncate">GPUs: {job.gpu_ids}</p>
-                </div>
-              </div>
-
-              <div className="flex items-center space-x-4 min-w-0">
-                <Gauge className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0" />
-                <div className="min-w-0">
-                  <p className="text-xs text-gray-400">Speed</p>
-                  <p className="text-sm font-medium text-gray-200 truncate">
-                    {job.speed_string == '' ? '?' : job.speed_string}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {isGPUInfoLoaded && gpuList.length > 0 && <GPUWidget gpu={gpuList[0]} />}
-        {jobType === 'train' && <FilesWidget jobID={job.id} className="2xl:col-span-2" />}
-        {isCPUInfoLoaded && cpuInfo && <CPUWidget cpu={cpuInfo} />}
+    <div className="flex h-full min-h-0 flex-col gap-3">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
+        <MetricCard
+          label="Progress"
+          value={`${job.step} / ${totalSteps}`}
+          sub={job.info || status}
+          icon={<Info className="w-4 h-4" />}
+          bar={progress}
+        />
+        <MetricCard
+          label="Speed"
+          value={job.speed_string || '?'}
+          sub="current worker"
+          icon={<Gauge className="w-4 h-4" />}
+        />
+        <MetricCard
+          label="GPU"
+          value={gpu ? `${gpu.utilization.gpu}%` : '?'}
+          sub={gpu ? gpu.name : `GPU ${job.gpu_ids}`}
+          icon={<Activity className="w-4 h-4" />}
+          bar={gpu?.utilization.gpu}
+          tone="green"
+        />
+        <MetricCard
+          label="VRAM"
+          value={gpu ? `${formatMemory(gpu.memory.used)} / ${formatMemory(gpu.memory.total)}` : '?'}
+          sub={gpu ? `${gpu.temperature} C` : 'waiting for stats'}
+          icon={<HardDrive className="w-4 h-4" />}
+          bar={gpu ? (gpu.memory.used / gpu.memory.total) * 100 : undefined}
+          tone="amber"
+        />
+        <MetricCard
+          label="CPU"
+          value={cpuInfo ? `${cpuInfo.currentLoad.toFixed(1)}%` : '?'}
+          sub={cpuInfo ? `${formatMemory(cpuInfo.totalMemory - cpuInfo.availableMemory)} memory` : 'waiting'}
+          icon={<Cpu className="w-4 h-4" />}
+          bar={cpuInfo?.currentLoad}
+        />
+        <MetricCard
+          label="Loss"
+          value={latestLoss?.value?.toPrecision(4) ?? '?'}
+          sub={latestLoss ? `step ${latestLoss.step}` : lossStatus === 'loading' ? 'loading' : 'waiting'}
+          icon={<Activity className="w-4 h-4" />}
+        />
       </div>
 
-      <div className="bg-gray-900 rounded-xl shadow-lg overflow-hidden border border-gray-800 flex min-h-0 flex-1 flex-col">
-        <div className="bg-gray-800 px-4 py-3 flex items-center justify-between">
-          <h2 className="text-gray-100">Terminal</h2>
-          <span className={`px-3 py-1 rounded-full text-sm ${getStatusColor(status)}`}>{status}</span>
+      <div className="grid min-h-0 flex-[0_0_46%] grid-cols-1 gap-3 xl:grid-cols-[minmax(0,2.15fr)_minmax(340px,1fr)]">
+        <Panel
+          title="Samples"
+          icon={<ImageIcon className="w-4 h-4 text-blue-400" />}
+          right={latestSamples.length ? `latest ${latestSamples.length}` : sampleStatus}
+          bodyClassName="p-3"
+        >
+          {latestSamples.length === 0 ? (
+            <div className="h-full flex items-center justify-center text-sm text-gray-400">
+              {sampleStatus === 'error' ? 'Error loading samples.' : 'Waiting for samples...'}
+            </div>
+          ) : (
+            <div className="grid h-full min-h-[210px] grid-cols-2 gap-2 lg:grid-cols-4">
+              {latestSamples.map((sample, idx) => (
+                <button
+                  key={sample}
+                  type="button"
+                  onClick={() => setSelectedSamplePath(sample)}
+                  className="group min-h-0 text-left"
+                >
+                  <div className="h-full min-h-0 overflow-hidden rounded-md border border-gray-800 bg-gray-950">
+                    <img
+                      src={`/api/img/${encodeURIComponent(sample)}`}
+                      alt={`Sample ${idx + 1}`}
+                      className="h-full w-full object-cover transition-opacity group-hover:opacity-85"
+                      loading="lazy"
+                    />
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </Panel>
+
+        <div className="grid min-h-0 grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-1 xl:grid-rows-[minmax(0,1fr)_auto]">
+          <Panel title="Loss Graph" icon={<Activity className="w-4 h-4 text-emerald-400" />} bodyClassName="min-h-0">
+            <LossPreview series={lossSeries} lossKeys={lossKeys} status={lossStatus} />
+          </Panel>
+
+          <Panel
+            title="Checkpoints"
+            icon={<Brain className="w-4 h-4 text-purple-400" />}
+            right={files.length ? `${files.length}` : undefined}
+            bodyClassName="p-2 overflow-y-auto"
+          >
+            {jobType === 'train' && files.length > 0 && (
+              <div className="space-y-1 text-xs">
+                {files.slice(0, 6).map(file => {
+                  const fileName = getCheckpointName(file.path) || getFileName(file.path);
+                  return (
+                    <a
+                      key={file.path}
+                      href={`/api/files/${encodeURIComponent(file.path)}`}
+                      target="_blank"
+                      className="flex items-center justify-between gap-3 rounded-md border border-gray-800 bg-gray-950 px-2 py-1.5 hover:bg-gray-800"
+                    >
+                      <span className="truncate text-gray-200">{fileName}</span>
+                      <span className="flex-shrink-0 text-gray-400">{cleanSize(file.size)}</span>
+                    </a>
+                  );
+                })}
+              </div>
+            )}
+            {(!jobType || files.length === 0) && (
+              <div className="flex min-h-20 items-center justify-center text-sm text-gray-400">No checkpoints yet</div>
+            )}
+          </Panel>
         </div>
-        <div className="bg-gray-950 relative flex-1 min-h-0">
-          <div ref={logRef} className="text-xs text-gray-300 absolute inset-0 p-4 overflow-y-auto" onScroll={handleScroll}>
+      </div>
+
+      <Panel
+        title="Terminal"
+        icon={<Terminal className="w-4 h-4 text-gray-400" />}
+        right={<span className={`px-2 py-1 rounded-full ${getStatusColor(status)}`}>{status}</span>}
+        className="flex-1"
+      >
+        <div className="bg-gray-950 relative h-full min-h-[260px]">
+          <div
+            ref={logRef}
+            className="text-xs text-gray-300 absolute inset-0 p-4 overflow-y-auto"
+            onScroll={handleScroll}
+          >
             {statusLog === 'loading' && 'Loading log...'}
             {statusLog === 'error' && 'Error loading log'}
             {['success', 'refreshing'].includes(statusLog) && (
               <div>
-                {logLines.map((line, index) => {
-                  return <pre key={index}>{line}</pre>;
-                })}
+                {logLines.map((line, index) => (
+                  <pre key={index}>{line}</pre>
+                ))}
               </div>
             )}
           </div>
         </div>
-      </div>
+      </Panel>
+
+      <SampleImageViewer
+        imgPath={selectedSamplePath}
+        numSamples={numSamples}
+        sampleImages={sampleImages}
+        onChange={setPath => setSelectedSamplePath(setPath)}
+        sampleConfig={sampleConfig}
+        refreshSampleImages={refreshSampleImages}
+      />
     </div>
   );
 }

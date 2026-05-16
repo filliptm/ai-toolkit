@@ -6,6 +6,29 @@ import { getTrainingFolder } from '@/server/settings';
 
 const prisma = new PrismaClient();
 
+function collectSafetensorsFiles(folder: string): string[] {
+  const entries = fs.readdirSync(folder, { withFileTypes: true });
+  const files: string[] = [];
+
+  entries.forEach(entry => {
+    const entryPath = path.join(folder, entry.name);
+
+    if (entry.isDirectory()) {
+      if (entry.name === 'samples' || entry.name === 'logs' || entry.name.startsWith('archived_')) {
+        return;
+      }
+      files.push(...collectSafetensorsFiles(entryPath));
+      return;
+    }
+
+    if (entry.isFile() && entry.name.endsWith('.safetensors')) {
+      files.push(entryPath);
+    }
+  });
+
+  return files;
+}
+
 export async function GET(request: NextRequest, { params }: { params: { jobID: string } }) {
   const { jobID } = await params;
 
@@ -24,25 +47,16 @@ export async function GET(request: NextRequest, { params }: { params: { jobID: s
     return NextResponse.json({ files: [] });
   }
 
-  // find all safetensors files in the job folder
-  let files = fs
-    .readdirSync(jobFolder)
-    .filter(file => {
-      return file.endsWith('.safetensors');
-    })
+  const fileObjects = collectSafetensorsFiles(jobFolder)
     .map(file => {
-      return path.join(jobFolder, file);
+      const stats = fs.statSync(file);
+      return {
+        path: file,
+        size: stats.size,
+        modified_at: stats.mtimeMs,
+      };
     })
-    .sort();
-
-  // get the file size for each file
-  const fileObjects = files.map(file => {
-    const stats = fs.statSync(file);
-    return {
-      path: file,
-      size: stats.size,
-    };
-  });
+    .sort((a, b) => b.modified_at - a.modified_at);
 
   return NextResponse.json({ files: fileObjects });
 }

@@ -4,6 +4,19 @@ import Link from 'next/link';
 import { Loader2, AlertCircle, Download, Box, Brain } from 'lucide-react';
 import classNames from 'classnames';
 
+function getPathParts(filePath: string) {
+  return filePath.split(/[\\/]/).filter(Boolean);
+}
+
+function getCheckpointName(filePath: string) {
+  const parts = getPathParts(filePath);
+  const fileName = parts.length > 0 ? parts[parts.length - 1] : filePath;
+  if (fileName === 'diffusion_pytorch_model.safetensors' && parts.length > 1) {
+    return parts[parts.length - 2];
+  }
+  return fileName.replace(/\.safetensors$/, '');
+}
+
 export default function FilesWidget({ jobID, className }: { jobID: string; className?: string }) {
   const { files, status, refreshFiles } = useFilesList(jobID, 5000);
 
@@ -46,8 +59,7 @@ export default function FilesWidget({ jobID, className }: { jobID: string; class
         {['success', 'refreshing'].includes(status) && (
           <div className="space-y-1">
             {files.map((file, index) => {
-              const fileName = file.path.split('/').pop() || '';
-              const nameWithoutExt = fileName.replace('.safetensors', '');
+              const nameWithoutExt = getCheckpointName(file.path);
               return (
                 <a
                   key={index}

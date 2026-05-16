@@ -25,8 +25,8 @@ config:
           num_repeats: 1
       train:
         batch_size: 1
-        steps: 8000
-        start_step: 4000
+        steps: 20000
+        start_step: 8000
         gradient_accumulation: 1
         train_unet: false
         train_text_encoder: false
