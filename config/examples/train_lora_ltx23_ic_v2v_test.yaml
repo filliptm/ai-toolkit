@@ -1,0 +1,72 @@
+---
+job: extension
+config:
+  name: "ltx23_ic_v2v_test_lora"
+  process:
+    - type: "diffusion_trainer"
+      training_folder: "output"
+      device: cuda:0
+      network:
+        type: "lora"
+        linear: 16
+        linear_alpha: 16
+        network_kwargs:
+          only_if_contains:
+            - "transformer_blocks"
+      save:
+        dtype: bf16
+        save_every: 250
+        max_step_saves_to_keep: 4
+        push_to_hub: false
+      datasets:
+        - folder_path: "C:/AI/Git Projects/LTX-IC-Trainer/projects/test/datasets/test/target"
+          reference_path: "C:/AI/Git Projects/LTX-IC-Trainer/projects/test/datasets/test/reference"
+          reference_cache_path: "C:/AI/Git Projects/LTX-IC-Trainer/projects/test/datasets/test/cache_ref"
+          require_reference: true
+          reference_frames: 0
+          reference_downscale: 1
+          caption_ext: "txt"
+          caption_dropout_rate: 0.05
+          cache_latents_to_disk: true
+          resolution: [720]
+          num_frames: 81
+          fps: 24
+          do_i2v: false
+          do_audio: false
+      train:
+        batch_size: 1
+        steps: 5
+        gradient_accumulation_steps: 1
+        train_unet: true
+        train_text_encoder: false
+        gradient_checkpointing: true
+        noise_scheduler: "flowmatch"
+        timestep_type: "weighted"
+        optimizer: "adamw8bit"
+        lr: 1e-4
+        dtype: bf16
+        disable_sampling: true
+      model:
+        arch: "ltx2.3"
+        name_or_path: "Lightricks/LTX-2.3/ltx-2.3-22b-dev.safetensors"
+        quantize: true
+        quantize_te: true
+        low_vram: true
+        model_kwargs:
+          ic_lora_strategy: "v2v"
+      sample:
+        sampler: "flowmatch"
+        sample_every: 250
+        width: 1280
+        height: 720
+        num_frames: 81
+        fps: 24
+        guidance_scale: 3
+        sample_steps: 25
+        prompts:
+          - "a cinematic video matching the reference identity, motion, and lighting"
+        neg: ""
+        seed: 42
+meta:
+  name: "[name]"
+  version: "1.0"

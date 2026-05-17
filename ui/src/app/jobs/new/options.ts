@@ -21,6 +21,10 @@ type AdditionalSections =
   | 'datasets.multi_control_paths'
   | 'datasets.mask_path'
   | 'datasets.reference_path'
+  | 'datasets.reference_cache_path'
+  | 'datasets.require_reference'
+  | 'datasets.reference_frames'
+  | 'datasets.reference_downscale'
   | 'datasets.outpaint_builder'
   | 'datasets.do_i2v'
   | 'datasets.do_audio'
@@ -923,6 +927,55 @@ export const modelArchs: ModelArch[] = [
     },
     disableSections: ['network.conv'],
     additionalSections: ['sample.ctrl_img', 'datasets.num_frames', 'model.layer_offloading', 'model.low_vram', 'datasets.do_audio', 'datasets.audio_normalize', 'datasets.audio_preserve_pitch', 'datasets.do_i2v', 'train.audio_loss_multiplier', 'datasets.auto_frame_count'],
+  },
+  {
+    name: 'ltx2.3:ic_v2v',
+    label: 'LTX-2.3 IC / V2V LoRA',
+    group: 'video',
+    isVideoModel: true,
+    defaults: {
+      'config.process[0].model.name_or_path': ['Lightricks/LTX-2.3/ltx-2.3-22b-dev.safetensors', defaultNameOrPath],
+      'config.process[0].model.quantize': [true, false],
+      'config.process[0].model.quantize_te': [true, false],
+      'config.process[0].model.low_vram': [true, false],
+      'config.process[0].model.model_kwargs.ic_lora_strategy': ['v2v', undefined],
+      'config.process[0].network.network_kwargs.only_if_contains': [
+        ['transformer_blocks'],
+        undefined,
+      ],
+      'config.process[0].sample.sampler': ['flowmatch', 'flowmatch'],
+      'config.process[0].train.noise_scheduler': ['flowmatch', 'flowmatch'],
+      'config.process[0].sample.num_frames': [81, 1],
+      'config.process[0].sample.fps': [24, 1],
+      'config.process[0].sample.width': [1280, 1024],
+      'config.process[0].sample.height': [720, 1024],
+      'config.process[0].train.timestep_type': ['weighted', 'sigmoid'],
+      'config.process[0].datasets[x].cache_latents_to_disk': [true, false],
+      'config.process[0].datasets[x].reference_path': [null, undefined],
+      'config.process[0].datasets[x].reference_cache_path': [null, undefined],
+      'config.process[0].datasets[x].require_reference': [true, undefined],
+      'config.process[0].datasets[x].reference_frames': [0, undefined],
+      'config.process[0].datasets[x].reference_downscale': [1, undefined],
+      'config.process[0].datasets[x].do_i2v': [false, undefined],
+      'config.process[0].datasets[x].do_audio': [false, undefined],
+      'config.process[0].datasets[x].fps': [24, undefined],
+      'config.process[0].datasets[x].num_frames': [81, 1],
+      'config.process[0].datasets[x].resolution': [[720], [512, 768, 1024]],
+      'config.process[0].datasets[x].auto_frame_count': [false, undefined],
+    },
+    disableSections: ['network.conv'],
+    additionalSections: [
+      'sample.reference_img',
+      'datasets.reference_path',
+      'datasets.reference_cache_path',
+      'datasets.require_reference',
+      'datasets.reference_frames',
+      'datasets.reference_downscale',
+      'datasets.num_frames',
+      'model.layer_offloading',
+      'model.low_vram',
+      'datasets.auto_frame_count',
+    ],
   },
   {
     name: 'flux2_klein_4b',

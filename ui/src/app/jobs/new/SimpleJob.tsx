@@ -207,6 +207,8 @@ export default function SimpleJob({
   const [outpaintOverwrite, setOutpaintOverwrite] = useState(true);
   const [outpaintStatus, setOutpaintStatus] = useState<'idle' | 'running' | 'success' | 'error'>('idle');
   const [outpaintMessage, setOutpaintMessage] = useState('');
+  const [referencePairStatus, setReferencePairStatus] = useState<Record<number, 'idle' | 'running' | 'success' | 'error'>>({});
+  const [referencePairMessage, setReferencePairMessage] = useState<Record<number, string>>({});
 
   const prepareOutpaintDataset = async () => {
     if (outpaintStatus === 'running') return;
@@ -234,6 +236,33 @@ export default function SimpleJob({
     } catch (error: any) {
       setOutpaintMessage(error?.response?.data?.error || error?.message || 'Failed to prepare outpaint dataset.');
       setOutpaintStatus('error');
+    }
+  };
+
+  const validateReferencePairs = async (datasetIndex: number) => {
+    const dataset = jobConfig.config.process[0].datasets[datasetIndex];
+    if (!dataset.reference_path || Array.isArray(dataset.reference_path)) return;
+    setReferencePairStatus(prev => ({ ...prev, [datasetIndex]: 'running' }));
+    setReferencePairMessage(prev => ({ ...prev, [datasetIndex]: 'Checking reference pairs...' }));
+    try {
+      const res = await apiClient.post('/api/datasets/referencePairs', {
+        targetPath: dataset.folder_path,
+        referencePath: dataset.reference_path,
+        mediaType: dataset.num_frames > 1 || dataset.auto_frame_count ? 'video' : 'image',
+      });
+      const data = res.data;
+      const problemCount = (data.missingReferences?.length ?? 0) + (data.extraReferences?.length ?? 0);
+      setReferencePairMessage(prev => ({
+        ...prev,
+        [datasetIndex]: `${data.matchedCount}/${data.targetCount} matched references, ${problemCount} listed issues.`,
+      }));
+      setReferencePairStatus(prev => ({ ...prev, [datasetIndex]: problemCount === 0 ? 'success' : 'error' }));
+    } catch (error: any) {
+      setReferencePairMessage(prev => ({
+        ...prev,
+        [datasetIndex]: error?.response?.data?.error || error?.message || 'Failed to validate reference pairs.',
+      }));
+      setReferencePairStatus(prev => ({ ...prev, [datasetIndex]: 'error' }));
     }
   };
 
@@ -1006,6 +1035,41 @@ export default function SimpleJob({
                           options={[{ value: '', label: <>&nbsp;</> }, ...datasetOptions]}
                         />
                       )}
+                      {modelArch?.additionalSections?.includes('datasets.reference_cache_path') && (
+                        <TextInput
+                          label="Reference Cache"
+                          value={dataset.reference_cache_path ?? ''}
+                          className="pt-2"
+                          onChange={value =>
+                            setJobConfig(
+                              value == '' ? null : value,
+                              `config.process[0].datasets[${i}].reference_cache_path`,
+                            )
+                          }
+                          placeholder="C:/path/to/cache_ref"
+                        />
+                      )}
+                      {modelArch?.additionalSections?.includes('datasets.reference_path') && dataset.reference_path && (
+                        <div className="pt-2">
+                          <button
+                            type="button"
+                            onClick={() => validateReferencePairs(i)}
+                            disabled={referencePairStatus[i] === 'running'}
+                            className="bg-gray-700 hover:bg-gray-600 disabled:opacity-60 rounded px-3 py-2 text-sm transition-colors"
+                          >
+                            {referencePairStatus[i] === 'running' ? 'Checking References...' : 'Check Reference Pairs'}
+                          </button>
+                          {referencePairMessage[i] && (
+                            <div
+                              className={`mt-2 text-xs ${
+                                referencePairStatus[i] === 'error' ? 'text-red-300' : 'text-gray-300'
+                              }`}
+                            >
+                              {referencePairMessage[i]}
+                            </div>
+                          )}
+                        </div>
+                      )}
                       {modelArch?.additionalSections?.includes('datasets.multi_control_paths') && (
                         <>
                           <SelectInput
@@ -1093,6 +1157,28 @@ export default function SimpleJob({
                           required
                         />
                       )}
+                      {modelArch?.additionalSections?.includes('datasets.reference_frames') && (
+                        <NumberInput
+                          label="Reference Frames"
+                          className="pt-2"
+                          value={dataset.reference_frames ?? 0}
+                          onChange={value => setJobConfig(value, `config.process[0].datasets[${i}].reference_frames`)}
+                          placeholder="0 uses target frame count"
+                          min={0}
+                        />
+                      )}
+                      {modelArch?.additionalSections?.includes('datasets.reference_downscale') && (
+                        <NumberInput
+                          label="Reference Downscale"
+                          className="pt-2"
+                          value={dataset.reference_downscale ?? 1}
+                          onChange={value =>
+                            setJobConfig(value, `config.process[0].datasets[${i}].reference_downscale`)
+                          }
+                          placeholder="eg. 1"
+                          min={1}
+                        />
+                      )}
                     </div>
                     <div>
                       <FormGroup label="Settings" className="">
@@ -1108,6 +1194,15 @@ export default function SimpleJob({
                           checked={dataset.is_reg || false}
                           onChange={value => setJobConfig(value, `config.process[0].datasets[${i}].is_reg`)}
                         />
+                        {modelArch?.additionalSections?.includes('datasets.require_reference') && (
+                          <Checkbox
+                            label="Require References"
+                            checked={dataset.require_reference || false}
+                            onChange={value =>
+                              setJobConfig(value, `config.process[0].datasets[${i}].require_reference`)
+                            }
+                          />
+                        )}
                         {modelArch?.additionalSections?.includes('datasets.auto_frame_count') && (
                           <Checkbox
                             label="Auto Frame Count"

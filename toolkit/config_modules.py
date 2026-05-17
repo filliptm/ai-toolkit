@@ -978,7 +978,18 @@ class DatasetConfig:
         self.reference_path: Union[str,List[str]] = kwargs.get('reference_path', None)
         if self.reference_path == '':
             self.reference_path = None
-        if self.clip_image_path is None and self.reference_path is not None and not isinstance(self.reference_path, list):
+        self.reference_cache_path: str = kwargs.get('reference_cache_path', None)
+        if self.reference_cache_path == '':
+            self.reference_cache_path = None
+        self.require_reference: bool = kwargs.get('require_reference', False)
+        self.reference_frames: int = int(kwargs.get('reference_frames', 0) or 0)
+        self.reference_downscale: int = max(1, int(kwargs.get('reference_downscale', 1) or 1))
+        if (
+            self.clip_image_path is None
+            and self.reference_path is not None
+            and self.reference_cache_path is None
+            and not isinstance(self.reference_path, list)
+        ):
             self.clip_image_path = self.reference_path
         # get the clip image randomly from the same folder as the image. Useful for folder grouped pairs.
         self.clip_image_from_same_folder: bool = kwargs.get('clip_image_from_same_folder', False)
