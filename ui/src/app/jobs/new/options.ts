@@ -21,6 +21,7 @@ type AdditionalSections =
   | 'datasets.multi_control_paths'
   | 'datasets.mask_path'
   | 'datasets.reference_path'
+  | 'datasets.outpaint_builder'
   | 'datasets.do_i2v'
   | 'datasets.do_audio'
   | 'datasets.audio_normalize'
@@ -441,6 +442,57 @@ export const modelArchs: ModelArch[] = [
       'sample.ctrl_img',
       'sample.mask_img',
       'sample.reference_img',
+      'datasets.num_frames',
+      'model.low_vram',
+      'model.layer_offloading',
+    ],
+  },
+  {
+    name: 'wan21_vace:14b-outpaint',
+    label: 'Wan 2.1 VACE Outpaint (14B)',
+    group: 'instruction',
+    isVideoModel: true,
+    defaults: {
+      'config.process[0].model.name_or_path': ['Wan-AI/Wan2.1-VACE-14B-diffusers', defaultNameOrPath],
+      'config.process[0].model.quantize': [true, false],
+      'config.process[0].model.quantize_te': [true, false],
+      'config.process[0].model.low_vram': [true, false],
+      'config.process[0].sample.sampler': ['flowmatch', 'flowmatch'],
+      'config.process[0].train.noise_scheduler': ['flowmatch', 'flowmatch'],
+      'config.process[0].train.timestep_type': ['weighted', 'sigmoid'],
+      'config.process[0].sample.num_frames': [1, 1],
+      'config.process[0].sample.fps': [1, 1],
+      'config.process[0].sample.width': [1024, 1024],
+      'config.process[0].sample.height': [576, 1024],
+      'config.process[0].sample.guidance_scale': [5, 4],
+      'config.process[0].sample.sample_steps': [25, 25],
+      'config.process[0].model.model_kwargs': [
+        {
+          vace_task: 'edit',
+          conditioning_scale: 1.0,
+          default_mask: 'preserve',
+          require_mask: true,
+          disable_mmap: true,
+        },
+        {},
+      ],
+      'config.process[0].datasets[x].mask_min_value': [0.0, 0.1],
+      'config.process[0].datasets[x].default_caption': [
+        'Extend the scene only inside the white masked area, matching the existing perspective, lighting, texture, color, and detail.',
+        '',
+      ],
+      'config.process[0].train.cache_text_embeddings': [true, false],
+      'config.process[0].network.linear': [64, 32],
+      'config.process[0].network.linear_alpha': [64, 32],
+      'config.process[0].network.conv': [16, 16],
+      'config.process[0].network.conv_alpha': [16, 16],
+    },
+    additionalSections: [
+      'datasets.outpaint_builder',
+      'datasets.control_path',
+      'datasets.mask_path',
+      'sample.ctrl_img',
+      'sample.mask_img',
       'datasets.num_frames',
       'model.low_vram',
       'model.layer_offloading',

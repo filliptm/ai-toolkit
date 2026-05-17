@@ -59,6 +59,18 @@ const docs: { [key: string]: ConfigDoc } = {
         The control dataset needs to have files that match the filenames of your training dataset. They should be
         matching file pairs. These images are fed as control/input images during training. The control images will be
         resized to match the training images.
+        <br />
+        <br />
+        For Wan VACE outpainting, use the original canvas as the control image and fill the outpaint area with white.
+      </>
+    ),
+  },
+  'datasets.mask_path': {
+    title: 'Mask Dataset',
+    description: (
+      <>
+        The mask dataset needs files that match the filenames of your training dataset. For Wan VACE outpainting, white
+        marks the editable outpaint area and black marks the preserved area.
       </>
     ),
   },

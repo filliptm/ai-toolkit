@@ -1,0 +1,74 @@
+---
+job: extension
+config:
+  name: "my_wan_vace_white_outpaint_lora_v1"
+  process:
+    - type: "diffusion_trainer"
+      training_folder: "output"
+      device: cuda:0
+      network:
+        type: "lora"
+        linear: 64
+        linear_alpha: 64
+        conv: 16
+        conv_alpha: 16
+      save:
+        dtype: float16
+        save_every: 250
+        max_step_saves_to_keep: 4
+        save_format: diffusers
+      datasets:
+        - folder_path: "/path/to/wan_vace_white_outpaint/target"
+          control_path: "/path/to/wan_vace_white_outpaint/control"
+          mask_path: "/path/to/wan_vace_white_outpaint/mask"
+          mask_min_value: 0.0
+          caption_ext: "txt"
+          caption_dropout_rate: 0.05
+          num_frames: 1
+          resolution: [768, 1024]
+      train:
+        batch_size: 1
+        steps: 20000
+        gradient_accumulation: 1
+        train_unet: true
+        train_text_encoder: false
+        gradient_checkpointing: true
+        noise_scheduler: "flowmatch"
+        timestep_type: "weighted"
+        optimizer: "adamw8bit"
+        lr: 1e-4
+        optimizer_params:
+          weight_decay: 1e-4
+        cache_text_embeddings: true
+        dtype: bf16
+      model:
+        name_or_path: "Wan-AI/Wan2.1-VACE-14B-diffusers"
+        arch: "wan21_vace"
+        quantize: true
+        quantize_te: true
+        low_vram: true
+        model_kwargs:
+          vace_task: "edit"
+          conditioning_scale: 1.0
+          default_mask: "preserve"
+          require_mask: true
+          disable_mmap: true
+      sample:
+        sampler: "flowmatch"
+        sample_every: 250
+        width: 1024
+        height: 576
+        num_frames: 1
+        fps: 1
+        samples:
+          - prompt: "Extend the scene only inside the white masked area, matching the existing perspective, lighting, texture, color, and detail."
+            ctrl_img: "/path/to/wan_vace_white_outpaint/control/0001_landscape_16x9.jpg"
+            mask_img: "/path/to/wan_vace_white_outpaint/mask/0001_landscape_16x9.png"
+        neg: ""
+        seed: 42
+        walk_seed: true
+        guidance_scale: 5
+        sample_steps: 25
+meta:
+  name: "[name]"
+  version: "1.0"
