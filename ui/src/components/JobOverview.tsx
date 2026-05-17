@@ -10,6 +10,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import useJobLog from '@/hooks/useJobLog';
 import SampleImageViewer from './SampleImageViewer';
+import JobLossGraph from './JobLossGraph';
 import { JobConfig } from '@/types';
 
 interface JobOverviewProps {
@@ -122,73 +123,6 @@ function Panel({
       </div>
       <div className={`min-h-0 flex-1 ${bodyClassName}`}>{children}</div>
     </section>
-  );
-}
-
-function LossPreview({
-  series,
-  lossKeys,
-  status,
-}: {
-  series: Record<string, LossPoint[]>;
-  lossKeys: string[];
-  status: string;
-}) {
-  const points = useMemo(() => {
-    const primaryKey = lossKeys[0] ?? 'loss';
-    const raw = (series[primaryKey] ?? []).filter(p => p.value != null && Number.isFinite(p.value));
-    return raw.slice(-120);
-  }, [series, lossKeys]);
-
-  const latest = getLatestLossPoint(series, lossKeys);
-
-  const path = useMemo(() => {
-    if (points.length < 2) return '';
-    const values = points.map(p => p.value as number);
-    const min = Math.min(...values);
-    const max = Math.max(...values);
-    const range = max - min || 1;
-    return points
-      .map((point, idx) => {
-        const x = (idx / (points.length - 1)) * 100;
-        const y = 100 - (((point.value as number) - min) / range) * 86 - 7;
-        return `${idx === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${y.toFixed(2)}`;
-      })
-      .join(' ');
-  }, [points]);
-
-  return (
-    <div className="h-full min-h-0 p-3">
-      <div className="bg-gray-950 border border-gray-800 rounded-md relative h-full min-h-[190px] overflow-hidden">
-        {points.length < 2 ? (
-          <div className="absolute inset-0 flex items-center justify-center text-sm text-gray-400">
-            {status === 'error' ? 'Failed to load loss.' : 'Waiting for loss points...'}
-          </div>
-        ) : (
-          <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 h-full w-full">
-            <path
-              d="M0 25H100 M0 50H100 M0 75H100 M25 0V100 M50 0V100 M75 0V100"
-              stroke="rgba(255,255,255,.06)"
-              strokeWidth="0.5"
-            />
-            <path
-              d={path}
-              fill="none"
-              stroke="rgba(96,165,250,1)"
-              strokeWidth="2.4"
-              vectorEffect="non-scaling-stroke"
-            />
-          </svg>
-        )}
-
-        {latest && (
-          <div className="absolute left-2 top-2 rounded-md border border-gray-800 bg-gray-950/85 px-2 py-1 text-xs text-gray-300">
-            <span className="text-gray-500">loss</span> {latest.value?.toPrecision(4)}{' '}
-            <span className="text-gray-500">step</span> {latest.step}
-          </div>
-        )}
-      </div>
-    </div>
   );
 }
 
@@ -361,7 +295,7 @@ export default function JobOverview({ job }: JobOverviewProps) {
 
         <div className="grid min-h-0 grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-1 xl:grid-rows-[minmax(0,1fr)_auto]">
           <Panel title="Loss Graph" icon={<Activity className="w-4 h-4 text-emerald-400" />} bodyClassName="min-h-0">
-            <LossPreview series={lossSeries} lossKeys={lossKeys} status={lossStatus} />
+            <JobLossGraph job={job} embedded />
           </Panel>
 
           <Panel

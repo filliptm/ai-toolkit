@@ -8,6 +8,7 @@ import 'uplot/dist/uPlot.min.css';
 
 interface Props {
   job: Job;
+  embedded?: boolean;
 }
 
 function formatNum(v: number) {
@@ -88,7 +89,7 @@ function dulledColor(rgba: string): string {
   return `rgba(${r},${g},${b},1)`;
 }
 
-export default function JobLossGraph({ job }: Props) {
+export default function JobLossGraph({ job, embedded = false }: Props) {
   const { series, lossKeys, status, refreshLoss } = useJobLossLog(job.id, 2000);
 
   // Controls
@@ -368,36 +369,44 @@ export default function JobLossGraph({ job }: Props) {
   }, []);
 
   const totalPoints = built.data[0]?.length ?? 0;
+  const outerClassName = embedded
+    ? 'flex h-full min-h-0 flex-col overflow-hidden'
+    : 'bg-gray-900 rounded-xl shadow-lg overflow-hidden border border-gray-800 flex flex-col h-full';
+  const chartPaddingClassName = embedded ? 'px-3 pt-3 pb-2' : 'px-4 pt-4 pb-4';
+  const controlsPaddingClassName = embedded ? 'px-3 pb-3' : 'px-4 pb-2';
+  const controlsGridClassName = embedded ? 'grid grid-cols-1 gap-2' : 'grid grid-cols-1 md:grid-cols-2 gap-3';
 
   return (
-    <div className="bg-gray-900 rounded-xl shadow-lg overflow-hidden border border-gray-800 flex flex-col h-full">
-      <div className="bg-gray-800 px-4 py-3 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-2">
-          <div className="h-2 w-2 rounded-full bg-blue-400" />
-          <h2 className="text-gray-100 text-sm font-medium">Loss graph</h2>
-          <span className="text-xs text-gray-400">
-            {status === 'loading' && 'Loading...'}
-            {status === 'refreshing' && 'Refreshing...'}
-            {status === 'error' && 'Error'}
-            {status === 'success' && hasData && `${totalPoints.toLocaleString()} steps`}
-            {status === 'success' && !hasData && 'No data yet'}
-          </span>
-        </div>
+    <div className={outerClassName}>
+      {!embedded && (
+        <div className="bg-gray-800 px-4 py-3 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2">
+            <div className="h-2 w-2 rounded-full bg-blue-400" />
+            <h2 className="text-gray-100 text-sm font-medium">Loss graph</h2>
+            <span className="text-xs text-gray-400">
+              {status === 'loading' && 'Loading...'}
+              {status === 'refreshing' && 'Refreshing...'}
+              {status === 'error' && 'Error'}
+              {status === 'success' && hasData && `${totalPoints.toLocaleString()} steps`}
+              {status === 'success' && !hasData && 'No data yet'}
+            </span>
+          </div>
 
-        <button
-          type="button"
-          onClick={refreshLoss}
-          className="px-3 py-1 rounded-md text-xs bg-gray-700/60 hover:bg-gray-700 text-gray-200 border border-gray-700"
-        >
-          Refresh
-        </button>
-      </div>
+          <button
+            type="button"
+            onClick={refreshLoss}
+            className="px-3 py-1 rounded-md text-xs bg-gray-700/60 hover:bg-gray-700 text-gray-200 border border-gray-700"
+          >
+            Refresh
+          </button>
+        </div>
+      )}
 
       {/* Chart */}
-      <div className="px-4 pt-4 pb-4 flex-1 min-h-0 flex flex-col">
+      <div className={`${chartPaddingClassName} flex-1 min-h-0 flex flex-col`}>
         <div
           className="bg-gray-950 rounded-lg border border-gray-800 relative select-none flex-1 min-h-0"
-          style={{ minHeight: 240 }}
+          style={{ minHeight: embedded ? 180 : 240 }}
         >
           {!hasData ? (
             <div className="absolute inset-0 flex items-center justify-center text-sm text-gray-400">
@@ -423,8 +432,26 @@ export default function JobLossGraph({ job }: Props) {
       </div>
 
       {/* Controls */}
-      <div className="px-4 pb-2 shrink-0">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div className={`${controlsPaddingClassName} shrink-0`}>
+        {embedded && (
+          <div className="mb-2 flex items-center justify-between gap-3 text-xs text-gray-400">
+            <span>
+              {status === 'loading' && 'Loading...'}
+              {status === 'refreshing' && 'Refreshing...'}
+              {status === 'error' && 'Error'}
+              {status === 'success' && hasData && `${totalPoints.toLocaleString()} steps`}
+              {status === 'success' && !hasData && 'No data yet'}
+            </span>
+            <button
+              type="button"
+              onClick={refreshLoss}
+              className="rounded-md border border-gray-800 bg-gray-950 px-2 py-1 text-xs text-gray-300 hover:bg-gray-800"
+            >
+              Refresh
+            </button>
+          </div>
+        )}
+        <div className={controlsGridClassName}>
           <div className="bg-gray-950 border border-gray-800 rounded-lg p-3">
             <label className="block text-xs text-gray-400 mb-2">Display</label>
             <div className="flex flex-wrap gap-2">

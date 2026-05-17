@@ -759,6 +759,8 @@ class LTX2Model(BaseModel):
                 target_seq_len = hidden_states.shape[1]
                 timestep = kwargs.get("timestep")
                 if timestep is not None:
+                    if kwargs.get("audio_timestep") is None:
+                        kwargs["audio_timestep"] = timestep
                     if timestep.dim() == 1:
                         target_timestep = timestep.unsqueeze(-1).expand(batch, target_seq_len)
                     else:
