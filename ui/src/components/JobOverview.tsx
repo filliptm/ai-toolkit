@@ -271,7 +271,7 @@ export default function JobOverview({ job }: JobOverviewProps) {
               {sampleStatus === 'error' ? 'Error loading samples.' : 'Waiting for samples...'}
             </div>
           ) : (
-            <div className="grid h-full min-h-[210px] grid-cols-2 gap-2 lg:grid-cols-4">
+            <div className="grid h-full min-h-0 grid-cols-2 gap-2 lg:grid-cols-4">
               {latestSamples.map((sample, idx) => (
                 <button
                   key={sample}

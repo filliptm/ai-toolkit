@@ -372,9 +372,16 @@ export default function JobLossGraph({ job, embedded = false }: Props) {
   const outerClassName = embedded
     ? 'flex h-full min-h-0 flex-col overflow-hidden'
     : 'bg-gray-900 rounded-xl shadow-lg overflow-hidden border border-gray-800 flex flex-col h-full';
-  const chartPaddingClassName = embedded ? 'px-3 pt-3 pb-2' : 'px-4 pt-4 pb-4';
-  const controlsPaddingClassName = embedded ? 'px-3 pb-3' : 'px-4 pb-2';
-  const controlsGridClassName = embedded ? 'grid grid-cols-1 gap-2' : 'grid grid-cols-1 md:grid-cols-2 gap-3';
+  const chartPaddingClassName = embedded ? 'px-2.5 pt-2.5 pb-2' : 'px-4 pt-4 pb-4';
+  const controlsPaddingClassName = embedded ? 'px-2.5 pb-2.5' : 'px-4 pb-2';
+  const controlsGridClassName = embedded ? 'grid grid-cols-2 gap-1.5' : 'grid grid-cols-1 md:grid-cols-2 gap-3';
+  const controlPanelClassName = embedded
+    ? 'min-w-0 bg-gray-950 border border-gray-800 rounded-md p-2'
+    : 'bg-gray-950 border border-gray-800 rounded-lg p-3';
+  const controlLabelClassName = embedded
+    ? 'block text-[10px] uppercase leading-3 text-gray-500 mb-1'
+    : 'block text-xs text-gray-400 mb-2';
+  const sliderLabelClassName = embedded ? 'block text-[11px] text-gray-400' : 'block text-xs text-gray-400';
 
   return (
     <div className={outerClassName}>
@@ -406,7 +413,7 @@ export default function JobLossGraph({ job, embedded = false }: Props) {
       <div className={`${chartPaddingClassName} flex-1 min-h-0 flex flex-col`}>
         <div
           className="bg-gray-950 rounded-lg border border-gray-800 relative select-none flex-1 min-h-0"
-          style={{ minHeight: embedded ? 180 : 240 }}
+          style={{ minHeight: embedded ? 120 : 240 }}
         >
           {!hasData ? (
             <div className="absolute inset-0 flex items-center justify-center text-sm text-gray-400">
@@ -434,8 +441,8 @@ export default function JobLossGraph({ job, embedded = false }: Props) {
       {/* Controls */}
       <div className={`${controlsPaddingClassName} shrink-0`}>
         {embedded && (
-          <div className="mb-2 flex items-center justify-between gap-3 text-xs text-gray-400">
-            <span>
+          <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] leading-4 text-gray-400">
+            <span className="min-w-0 truncate">
               {status === 'loading' && 'Loading...'}
               {status === 'refreshing' && 'Refreshing...'}
               {status === 'error' && 'Error'}
@@ -445,36 +452,38 @@ export default function JobLossGraph({ job, embedded = false }: Props) {
             <button
               type="button"
               onClick={refreshLoss}
-              className="rounded-md border border-gray-800 bg-gray-950 px-2 py-1 text-xs text-gray-300 hover:bg-gray-800"
+              className="shrink-0 rounded-md border border-gray-800 bg-gray-950 px-2 py-0.5 text-[11px] text-gray-300 hover:bg-gray-800"
             >
               Refresh
             </button>
           </div>
         )}
         <div className={controlsGridClassName}>
-          <div className="bg-gray-950 border border-gray-800 rounded-lg p-3">
-            <label className="block text-xs text-gray-400 mb-2">Display</label>
-            <div className="flex flex-wrap gap-2">
-              <ToggleButton checked={showSmoothed} onClick={() => setShowSmoothed(v => !v)} label="Smoothed" />
-              <ToggleButton checked={showRaw} onClick={() => setShowRaw(v => !v)} label="Raw" />
-              <ToggleButton checked={useLogScale} onClick={() => setUseLogScale(v => !v)} label="Log Y" />
-              <ToggleButton checked={clipOutliers} onClick={() => setClipOutliers(v => !v)} label="Clip outliers" />
+          <div className={controlPanelClassName}>
+            <label className={controlLabelClassName}>Display</label>
+            <div className={embedded ? 'flex flex-wrap gap-1' : 'flex flex-wrap gap-2'}>
+              <ToggleButton checked={showSmoothed} onClick={() => setShowSmoothed(v => !v)} label="Smoothed" compact={embedded} />
+              <ToggleButton checked={showRaw} onClick={() => setShowRaw(v => !v)} label="Raw" compact={embedded} />
+              <ToggleButton checked={useLogScale} onClick={() => setUseLogScale(v => !v)} label="Log Y" compact={embedded} />
+              <ToggleButton checked={clipOutliers} onClick={() => setClipOutliers(v => !v)} label="Clip" compact={embedded} />
             </div>
           </div>
 
-          <div className="bg-gray-950 border border-gray-800 rounded-lg p-3">
-            <label className="block text-xs text-gray-400 mb-2">Series</label>
+          <div className={controlPanelClassName}>
+            <label className={controlLabelClassName}>Series</label>
             {lossKeys.length === 0 ? (
-              <div className="text-sm text-gray-400">No loss keys found yet.</div>
+              <div className={embedded ? 'text-[11px] text-gray-400' : 'text-sm text-gray-400'}>No loss keys found yet.</div>
             ) : (
-              <div className="flex flex-wrap gap-2">
+              <div className={embedded ? 'flex flex-wrap gap-1' : 'flex flex-wrap gap-2'}>
                 {lossKeys.map(k => (
                   <button
                     key={k}
                     type="button"
                     onClick={() => setEnabled(prev => ({ ...prev, [k]: !(prev[k] ?? true) }))}
                     className={[
-                      'px-3 py-1 rounded-md text-xs border transition-colors',
+                      embedded
+                        ? 'min-w-0 px-2 py-0.5 rounded-md text-[11px] border transition-colors truncate'
+                        : 'px-3 py-1 rounded-md text-xs border transition-colors',
                       enabled[k] === false
                         ? 'bg-gray-900 text-gray-400 border-gray-800 hover:bg-gray-800/60'
                         : 'bg-gray-900 text-gray-200 border-gray-800 hover:bg-gray-800/60',
@@ -482,7 +491,7 @@ export default function JobLossGraph({ job, embedded = false }: Props) {
                     aria-pressed={enabled[k] !== false}
                     title={k}
                   >
-                    <span className="inline-block h-2 w-2 rounded-full mr-2" style={{ background: strokeForKey(k) }} />
+                    <span className="inline-block h-2 w-2 rounded-full mr-1.5" style={{ background: strokeForKey(k) }} />
                     {k}
                   </button>
                 ))}
@@ -490,9 +499,9 @@ export default function JobLossGraph({ job, embedded = false }: Props) {
             )}
           </div>
 
-          <div className="bg-gray-950 border border-gray-800 rounded-lg p-3">
-            <div className="flex items-center justify-between mb-1">
-              <label className="block text-xs text-gray-400">Smoothing</label>
+          <div className={controlPanelClassName}>
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <label className={sliderLabelClassName}>Smoothing</label>
               <span className="text-xs text-gray-300">{smoothing}%</span>
             </div>
             <input
@@ -501,14 +510,14 @@ export default function JobLossGraph({ job, embedded = false }: Props) {
               max={100}
               value={smoothing}
               onChange={e => setSmoothing(Number(e.target.value))}
-              className="w-full accent-blue-500"
+              className="block w-full accent-blue-500"
               disabled={!showSmoothed}
             />
           </div>
 
-          <div className="bg-gray-950 border border-gray-800 rounded-lg p-3">
-            <div className="flex items-center justify-between mb-1">
-              <label className="block text-xs text-gray-400">Plot stride</label>
+          <div className={controlPanelClassName}>
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <label className={sliderLabelClassName}>Plot stride</label>
               <span className="text-xs text-gray-300">every {plotStride} pt</span>
             </div>
             <input
@@ -517,9 +526,9 @@ export default function JobLossGraph({ job, embedded = false }: Props) {
               max={20}
               value={plotStride}
               onChange={e => setPlotStride(Number(e.target.value))}
-              className="w-full accent-blue-500"
+              className="block w-full accent-blue-500"
             />
-            <div className="mt-2 text-[11px] text-gray-500">UI downsample for huge runs.</div>
+            {!embedded && <div className="mt-2 text-[11px] text-gray-500">UI downsample for huge runs.</div>}
           </div>
         </div>
       </div>
@@ -550,13 +559,25 @@ export default function JobLossGraph({ job, embedded = false }: Props) {
   );
 }
 
-function ToggleButton({ checked, onClick, label }: { checked: boolean; onClick: () => void; label: string }) {
+function ToggleButton({
+  checked,
+  onClick,
+  label,
+  compact = false,
+}: {
+  checked: boolean;
+  onClick: () => void;
+  label: string;
+  compact?: boolean;
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={[
-        'px-3 py-1 rounded-md text-xs border transition-colors',
+        compact
+          ? 'px-2 py-0.5 rounded-md text-[11px] leading-4 border transition-colors'
+          : 'px-3 py-1 rounded-md text-xs border transition-colors',
         checked
           ? 'bg-blue-500/10 text-blue-300 border-blue-500/30 hover:bg-blue-500/15'
           : 'bg-gray-900 text-gray-300 border-gray-800 hover:bg-gray-800/60',
