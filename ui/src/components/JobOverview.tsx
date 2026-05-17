@@ -12,6 +12,7 @@ import useJobLog from '@/hooks/useJobLog';
 import SampleImageViewer from './SampleImageViewer';
 import JobLossGraph from './JobLossGraph';
 import { JobConfig } from '@/types';
+import { isAudio, isVideo } from '@/utils/basic';
 
 interface JobOverviewProps {
   job: Job;
@@ -280,12 +281,32 @@ export default function JobOverview({ job }: JobOverviewProps) {
                   className="group min-h-0 text-left"
                 >
                   <div className="h-full min-h-0 overflow-hidden rounded-md border border-gray-800 bg-gray-950">
-                    <img
-                      src={`/api/img/${encodeURIComponent(sample)}`}
-                      alt={`Sample ${idx + 1}`}
-                      className="h-full w-full object-cover transition-opacity group-hover:opacity-85"
-                      loading="lazy"
-                    />
+                    {isVideo(sample) ? (
+                      <video
+                        src={`/api/img/${encodeURIComponent(sample)}`}
+                        className="h-full w-full object-cover transition-opacity group-hover:opacity-85"
+                        preload="metadata"
+                        playsInline
+                        muted
+                        loop
+                        autoPlay
+                        controls={false}
+                      />
+                    ) : isAudio(sample) ? (
+                      <img
+                        src={`/api/audio/art/${encodeURIComponent(sample)}`}
+                        alt={`Sample ${idx + 1}`}
+                        className="h-full w-full object-cover transition-opacity group-hover:opacity-85"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <img
+                        src={`/api/img/${encodeURIComponent(sample)}`}
+                        alt={`Sample ${idx + 1}`}
+                        className="h-full w-full object-cover transition-opacity group-hover:opacity-85"
+                        loading="lazy"
+                      />
+                    )}
                   </div>
                 </button>
               ))}
