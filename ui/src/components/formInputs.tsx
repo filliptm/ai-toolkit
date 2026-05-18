@@ -28,10 +28,22 @@ export interface TextInputProps extends InputProps {
   onChange: (value: string) => void;
   type?: 'text' | 'password';
   disabled?: boolean;
+  suffix?: React.ReactNode;
 }
 
 export const TextInput = forwardRef<HTMLInputElement, TextInputProps>((props: TextInputProps, ref) => {
-  const { label, value, onChange, placeholder, required, disabled, type = 'text', className, docKey = null } = props;
+  const {
+    label,
+    value,
+    onChange,
+    placeholder,
+    required,
+    disabled,
+    type = 'text',
+    className,
+    docKey = null,
+    suffix,
+  } = props;
   let { doc } = props;
   if (!doc && docKey) {
     doc = getDoc(docKey);
@@ -48,18 +60,27 @@ export const TextInput = forwardRef<HTMLInputElement, TextInputProps>((props: Te
           )}
         </label>
       )}
-      <input
-        ref={ref}
-        type={type}
-        value={value}
-        onChange={e => {
-          if (!disabled) onChange(e.target.value);
-        }}
-        className={`${inputClasses} ${disabled ? 'opacity-30 cursor-not-allowed' : ''}`}
-        placeholder={placeholder}
-        required={required}
-        disabled={disabled}
-      />
+      <div className={classNames('flex', suffix ? 'items-stretch' : '')}>
+        <input
+          ref={ref}
+          type={type}
+          value={value}
+          onChange={e => {
+            if (!disabled) onChange(e.target.value);
+          }}
+          className={classNames(inputClasses, disabled ? 'opacity-30 cursor-not-allowed' : '', {
+            'rounded-r-none': suffix,
+          })}
+          placeholder={placeholder}
+          required={required}
+          disabled={disabled}
+        />
+        {suffix && (
+          <div className="flex items-center px-3 text-sm bg-gray-900 border border-l-0 border-gray-700 rounded-r-sm text-gray-400">
+            {suffix}
+          </div>
+        )}
+      </div>
     </div>
   );
 });
@@ -187,30 +208,43 @@ export const NumberInput = (props: NumberInputProps) => {
   );
 };
 
-export interface SelectInputProps extends InputProps {
-  value: string;
+interface SelectInputPropsBase extends InputProps {
   disabled?: boolean;
-  onChange: (value: string) => void;
   options: GroupedSelectOption[] | SelectOption[];
 }
 
+export interface SingleSelectInputProps extends SelectInputPropsBase {
+  multiple?: false;
+  value: string;
+  onChange: (value: string) => void;
+}
+
+export interface MultiSelectInputProps extends SelectInputPropsBase {
+  multiple: true;
+  value: string[];
+  onChange: (value: string[]) => void;
+}
+
+export type SelectInputProps = SingleSelectInputProps | MultiSelectInputProps;
+
 export const SelectInput = (props: SelectInputProps) => {
-  const { label, value, onChange, options, docKey = null } = props;
+  const { label, value, onChange, options, docKey = null, multiple } = props;
   let { doc } = props;
   if (!doc && docKey) {
     doc = getDoc(docKey);
   }
-  let selectedOption: SelectOption | undefined;
-  if (options && options.length > 0) {
-    // see if grouped options
-    if ('options' in options[0]) {
-      selectedOption = (options as GroupedSelectOption[])
-        .flatMap(group => group.options)
-        .find(opt => opt.value === value);
-    } else {
-      selectedOption = (options as SelectOption[]).find(opt => opt.value === value);
-    }
-  }
+
+  const flatOptions: SelectOption[] =
+    options && options.length > 0
+      ? 'options' in options[0]
+        ? (options as GroupedSelectOption[]).flatMap(group => group.options)
+        : (options as SelectOption[])
+      : [];
+
+  const selectedOption = multiple
+    ? flatOptions.filter(opt => (value as string[]).includes(opt.value))
+    : flatOptions.find(opt => opt.value === (value as string));
+
   return (
     <div
       className={classNames(props.className, {
@@ -231,11 +265,15 @@ export const SelectInput = (props: SelectInputProps) => {
         value={selectedOption}
         options={options}
         isDisabled={props.disabled}
+        isMulti={multiple}
         className="aitk-react-select-container"
         classNamePrefix="aitk-react-select"
         onChange={selected => {
-          if (selected) {
-            onChange((selected as { value: string }).value);
+          if (multiple) {
+            const arr = (selected as { value: string }[] | null) ?? [];
+            (onChange as (v: string[]) => void)(arr.map(option => option.value));
+          } else if (selected) {
+            (onChange as (v: string) => void)((selected as { value: string }).value);
           }
         }}
       />

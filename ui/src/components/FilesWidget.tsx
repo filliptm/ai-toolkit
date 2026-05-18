@@ -3,6 +3,8 @@ import useFilesList from '@/hooks/useFilesList';
 import Link from 'next/link';
 import { Loader2, AlertCircle, Download, Box, Brain } from 'lucide-react';
 import classNames from 'classnames';
+import { openMergeLoRAsModal } from './MergeLoRAsModal';
+import { getFoldername } from '@/utils/basic';
 
 function getPathParts(filePath: string) {
   return filePath.split(/[\\/]/).filter(Boolean);
@@ -17,7 +19,7 @@ function getCheckpointName(filePath: string) {
   return fileName.replace(/\.safetensors$/, '');
 }
 
-export default function FilesWidget({ jobID, className }: { jobID: string; className?: string }) {
+export default function FilesWidget({ jobID, jobName, className }: { jobID: string; jobName?: string; className?: string }) {
   const { files, status, refreshFiles } = useFilesList(jobID, 5000);
 
   const cleanSize = (size: number) => {
@@ -40,6 +42,22 @@ export default function FilesWidget({ jobID, className }: { jobID: string; class
           <h2 className="font-semibold text-gray-100">Checkpoints</h2>
           <span className="px-2 py-0.5 bg-gray-700 rounded-full text-xs text-gray-300">{files.length}</span>
         </div>
+        {files.length > 0 && (
+          <button
+            type="button"
+            className="rounded-full bg-purple-500/10 px-3 py-1 text-xs uppercase text-purple-300 hover:bg-purple-500/20"
+            onClick={() => {
+              openMergeLoRAsModal(
+                getFoldername(files[0].path),
+                `${jobName || 'lora'}_merged`,
+                files.map(file => ({ path: file.path })),
+                refreshFiles,
+              );
+            }}
+          >
+            Merge
+          </button>
+        )}
       </div>
 
       <div className="p-2">

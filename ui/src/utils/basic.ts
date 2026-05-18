@@ -17,6 +17,21 @@ export const isVideo = (filePath: string) => hasExtension(filePath, videoExtensi
 export const isImage = (filePath: string) => hasExtension(filePath, imgExtensions);
 export const isAudio = (filePath: string) => hasExtension(filePath, audioExtensions);
 
+export const getPathParts = (filePath: string) => {
+  return filePath.split(/[\\/]/).filter(Boolean);
+};
+
+export const getFilename = (filePath: string) => {
+  const parts = getPathParts(filePath);
+  return parts.length > 0 ? parts[parts.length - 1] : filePath;
+};
+
+export const getFoldername = (filePath: string) => {
+  const normalized = filePath.replace(/[\\/]+$/, '');
+  const idx = Math.max(normalized.lastIndexOf('/'), normalized.lastIndexOf('\\'));
+  return idx >= 0 ? normalized.slice(0, idx) : '';
+};
+
 export const tagsToObj = (tagStr: string): Record<string, any> => {
   const result: Record<string, any> = {};
   const regex = /<([A-Z_][A-Z0-9_]*)>([\s\S]*?)<\/\1>/g;

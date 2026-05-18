@@ -12,7 +12,8 @@ import useJobLog from '@/hooks/useJobLog';
 import SampleImageViewer from './SampleImageViewer';
 import JobLossGraph from './JobLossGraph';
 import { JobConfig } from '@/types';
-import { isAudio, isVideo } from '@/utils/basic';
+import { getFoldername, isAudio, isVideo } from '@/utils/basic';
+import { openMergeLoRAsModal } from './MergeLoRAsModal';
 
 interface JobOverviewProps {
   job: Job;
@@ -135,7 +136,7 @@ export default function JobOverview({ job }: JobOverviewProps) {
 
   const { log, status: statusLog } = useJobLog(job.id, 2000);
   const { sampleImages, status: sampleStatus, refreshSampleImages } = useSampleImages(job.id, 5000);
-  const { files } = useFilesList(job.id, 5000);
+  const { files, refreshFiles } = useFilesList(job.id, 5000);
   const { gpuList, isGPUInfoLoaded } = useGPUInfo(gpuIds, 5000);
   const { cpuInfo } = useCPUInfo(5000);
   const { series: lossSeries, lossKeys, status: lossStatus } = useJobLossLog(job.id, 2000);
@@ -322,7 +323,27 @@ export default function JobOverview({ job }: JobOverviewProps) {
           <Panel
             title="Checkpoints"
             icon={<Brain className="w-4 h-4 text-purple-400" />}
-            right={files.length ? `${files.length}` : undefined}
+            right={
+              files.length ? (
+                <div className="flex items-center gap-2">
+                  <span>{files.length}</span>
+                  <button
+                    type="button"
+                    className="rounded-full bg-purple-500/10 px-2 py-0.5 text-[10px] uppercase text-purple-300 hover:bg-purple-500/20"
+                    onClick={() => {
+                      openMergeLoRAsModal(
+                        getFoldername(files[0].path),
+                        `${job.name}_merged`,
+                        files.map(file => ({ path: file.path })),
+                        refreshFiles,
+                      );
+                    }}
+                  >
+                    Merge
+                  </button>
+                </div>
+              ) : undefined
+            }
             bodyClassName="p-2 overflow-y-auto"
           >
             {jobType === 'train' && files.length > 0 && (
