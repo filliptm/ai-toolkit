@@ -261,7 +261,7 @@ export default function JobOverview({ job }: JobOverviewProps) {
         />
       </div>
 
-      <div className="grid min-h-0 flex-[0_0_46%] grid-cols-1 gap-3 xl:grid-cols-[minmax(0,2.15fr)_minmax(340px,1fr)]">
+      <div className="grid min-h-0 flex-[0_0_46%] grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.6fr)_minmax(320px,1fr)_minmax(260px,0.75fr)]">
         <Panel
           title="Samples"
           icon={<ImageIcon className="w-4 h-4 text-blue-400" />}
@@ -315,60 +315,58 @@ export default function JobOverview({ job }: JobOverviewProps) {
           )}
         </Panel>
 
-        <div className="grid min-h-0 grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-1 xl:grid-rows-[minmax(0,1fr)_auto]">
-          <Panel title="Loss Graph" icon={<Activity className="w-4 h-4 text-emerald-400" />} bodyClassName="min-h-0">
-            <JobLossGraph job={job} embedded />
-          </Panel>
+        <Panel title="Loss Graph" icon={<Activity className="w-4 h-4 text-emerald-400" />} bodyClassName="min-h-0">
+          <JobLossGraph job={job} embedded />
+        </Panel>
 
-          <Panel
-            title="Checkpoints"
-            icon={<Brain className="w-4 h-4 text-purple-400" />}
-            right={
-              files.length ? (
-                <div className="flex items-center gap-2">
-                  <span>{files.length}</span>
-                  <button
-                    type="button"
-                    className="rounded-full bg-purple-500/10 px-2 py-0.5 text-[10px] uppercase text-purple-300 hover:bg-purple-500/20"
-                    onClick={() => {
-                      openMergeLoRAsModal(
-                        getFoldername(files[0].path),
-                        `${job.name}_merged`,
-                        files.map(file => ({ path: file.path })),
-                        refreshFiles,
-                      );
-                    }}
-                  >
-                    Merge
-                  </button>
-                </div>
-              ) : undefined
-            }
-            bodyClassName="p-2 overflow-y-auto"
-          >
-            {jobType === 'train' && files.length > 0 && (
-              <div className="space-y-1 text-xs">
-                {files.slice(0, 6).map(file => {
-                  const fileName = getCheckpointName(file.path) || getFileName(file.path);
-                  return (
-                    <a
-                      key={file.path}
-                      href={`/api/files/${encodeURIComponent(file.path)}`}
-                      target="_blank"
-                      className="flex items-center justify-between gap-3 rounded-md border border-gray-800 bg-gray-950 px-2 py-1.5 hover:bg-gray-800"
-                    >
-                      <span className="truncate text-gray-200">{fileName}</span>
-                      <span className="flex-shrink-0 text-gray-400">{cleanSize(file.size)}</span>
-                    </a>
-                  );
-                })}
+        <Panel
+          title="LoRAs"
+          icon={<Brain className="w-4 h-4 text-purple-400" />}
+          right={
+            files.length ? (
+              <div className="flex items-center gap-2">
+                <span>{files.length}</span>
+                <button
+                  type="button"
+                  className="rounded-full bg-purple-500/10 px-2 py-0.5 text-[10px] uppercase text-purple-300 hover:bg-purple-500/20"
+                  onClick={() => {
+                    openMergeLoRAsModal(
+                      getFoldername(files[0].path),
+                      `${job.name}_merged`,
+                      files.map(file => ({ path: file.path })),
+                      refreshFiles,
+                    );
+                  }}
+                >
+                  Merge
+                </button>
               </div>
+            ) : undefined
+          }
+          bodyClassName="p-2 overflow-y-auto"
+        >
+          {jobType === 'train' && files.length > 0 && (
+            <div className="space-y-1 text-xs">
+              {files.map(file => {
+                const fileName = getCheckpointName(file.path) || getFileName(file.path);
+                return (
+                  <a
+                    key={file.path}
+                    href={`/api/files/${encodeURIComponent(file.path)}`}
+                    target="_blank"
+                    className="flex items-center justify-between gap-2 rounded-md border border-gray-800 bg-gray-950 px-2 py-1.5 hover:bg-gray-800"
+                  >
+                    <span className="min-w-0 truncate text-gray-200">{fileName}</span>
+                    <span className="flex-shrink-0 text-[10px] text-gray-400">{cleanSize(file.size)}</span>
+                  </a>
+                );
+              })}
+            </div>
+          )}
+          {(!jobType || files.length === 0) && (
+            <div className="flex min-h-20 items-center justify-center text-sm text-gray-400">No LoRAs yet</div>
             )}
-            {(!jobType || files.length === 0) && (
-              <div className="flex min-h-20 items-center justify-center text-sm text-gray-400">No checkpoints yet</div>
-            )}
-          </Panel>
-        </div>
+        </Panel>
       </div>
 
       <Panel
