@@ -11,7 +11,7 @@ job: extension           # Job type (usually 'extension' for training)
 config:
   name: "my_lora_v1"     # Output name
   process:               # List of processes to run
-    - type: 'sd_trainer' # Process type (extension uid)
+    - type: 'diffusion_trainer' # Process type (extension uid)
       # ... process configuration
 meta:                    # Optional metadata
   name: "[name]"         # [name] is replaced with config.name
@@ -47,20 +47,22 @@ model:
 
 ```yaml
 process:
-  - type: 'sd_trainer'              # Extension UID
+  - type: 'diffusion_trainer'       # Extension UID
     training_folder: "output"       # Root output folder
-    device: "cuda:0"                # GPU device
+    device: "cuda"                  # Device; UI sets CUDA_VISIBLE_DEVICES for selected GPUs
     trigger_word: "sks"             # Trigger word for training
     performance_log_every: 1000     # Log performance stats every N steps
+    sqlite_db_path: "./aitk_db.db"  # Used by diffusion_trainer/UI logging
 ```
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `type` | string | Required | Extension UID (`sd_trainer`, `diffusion_trainer`, etc.) |
+| `type` | string | Required | Extension UID (`diffusion_trainer`, `sd_trainer`, `concept_slider`, etc.) |
 | `training_folder` | string | Required | Root folder for outputs |
-| `device` | string | `"cuda:0"` | CUDA device to use |
+| `device` | string | `"cuda"` | Device to use |
 | `trigger_word` | string | None | Trigger word to inject into captions |
 | `performance_log_every` | int | 0 | Log performance every N steps (0 = disabled) |
+| `sqlite_db_path` | string | None | SQLite DB used by UI-aware processes |
 
 ---
 
@@ -74,10 +76,16 @@ model:
   quantize: true                    # Enable 8-bit quantization
   quantize_te: true                 # Quantize text encoder
   qtype: "qfloat8"                  # Quantization type
+  qtype_te: "qfloat8"               # Text encoder quantization type
   low_vram: false                   # Low VRAM mode
   layer_offloading: false           # Offload layers to CPU
+  layer_offloading_transformer_percent: 1.0
+  layer_offloading_text_encoder_percent: 1.0
   vae_path: null                    # Custom VAE path
+  extras_name_or_path: null         # Shared extras source for model variants
   assistant_lora_path: null         # Training adapter for distilled models
+  accuracy_recovery_adapter: null   # Optional ARA path; can also be encoded in qtype
+  model_kwargs: {}                  # Model-specific options
 ```
 
 ### Model Configuration Options
@@ -85,20 +93,26 @@ model:
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `name_or_path` | string | Required | HuggingFace model ID or local path |
-| `arch` | string | Auto | Architecture: `sd1`, `sd2`, `sdxl`, `sd3`, `flux`, `wan21`, `lumina2`, etc. |
+| `arch` | string | Auto | Architecture identifier; see [Supported Models](./models.md) |
 | `is_flux` | bool | false | Legacy flag for FLUX models |
 | `is_xl` | bool | false | Legacy flag for SDXL models |
 | `is_v2` | bool | false | Legacy flag for SD 2.x models |
 | `quantize` | bool | false | Quantize transformer/UNet to 8-bit |
 | `quantize_te` | bool | false | Quantize text encoder to 8-bit |
-| `qtype` | string | `"qfloat8"` | Quantization type: `qfloat8`, `qint4`, `uint3`-`uint7` |
+| `qtype` | string | `"qfloat8"` | Quantization type: `qfloat8`, `uint2`-`uint7`; `int8`/`float8` are also used internally in some paths |
 | `qtype_te` | string | `"qfloat8"` | Text encoder quantization type |
 | `low_vram` | bool | false | Quantize on CPU (slower, less VRAM) |
 | `layer_offloading` | bool | false | Offload layers to CPU during training |
+| `layer_offloading_transformer_percent` | float | 1.0 | Fraction of transformer layers eligible for offload |
+| `layer_offloading_text_encoder_percent` | float | 1.0 | Fraction of text encoder layers eligible for offload |
 | `vae_path` | string | null | Custom VAE model path |
 | `te_name_or_path` | string | null | Custom text encoder path |
+| `extras_name_or_path` | string | `name_or_path` | Alternate source for shared model extras such as VAE/text encoder files |
 | `assistant_lora_path` | string | null | Training adapter for distilled models |
 | `accuracy_recovery_adapter` | string | null | Adapter for quantization accuracy recovery |
+| `compile` | bool | false | Enable `torch.compile`; disabled automatically if quantization is enabled |
+| `model_kwargs` | object | `{}` | Model-specific backend options |
+| `model_paths` | object | `{}` | Model-specific local component paths |
 
 ### Architecture Identifiers
 
@@ -108,13 +122,23 @@ model:
 | `sd2` | Stable Diffusion 2.x |
 | `sdxl` | Stable Diffusion XL |
 | `sd3` | Stable Diffusion 3 |
-| `flux` | FLUX.1, FLUX.2, Flex.1/2 |
-| `wan21` | Wan 2.1, Wan 2.2 |
+| `flux` | FLUX.1, Flex.1 |
+| `flex2` | Flex.2 |
+| `flux_kontext` | FLUX.1-Kontext |
+| `flux2`, `flux2_klein_4b`, `flux2_klein_9b` | FLUX.2 family |
+| `wan21`, `wan21_i2v`, `wan21_vace` | Wan 2.1 T2V/I2V/VACE |
+| `wan22_14b`, `wan22_14b_i2v`, `wan22_5b` | Wan 2.2 |
+| `ltx2`, `ltx2.3` | LTX video models |
 | `lumina2` | Lumina Image 2.0 |
-| `pixart` | PixArt Alpha |
-| `pixart_sigma` | PixArt Sigma |
-| `auraflow` | AuraFlow |
-| `hidream` | HiDream |
+| `qwen_image`, `qwen_image_edit`, `qwen_image_edit_plus` | Qwen-Image family |
+| `hidream`, `hidream_e1`, `hidream_o1` | HiDream family |
+| `chroma`, `chroma_radiance`, `zeta_chroma` | Chroma family |
+| `zimage` | Z-Image variants |
+| `omnigen2` | OmniGen2 |
+| `ernie_image` | ERNIE-Image |
+| `nucleus_image` | Nucleus-Image |
+| `ace_step_15`, `ace_step_15_xl` | ACE-Step audio |
+| `sd1`, `sd2`, `sdxl`, `sd3`, `ssd`, `vega`, `pixart`, `pixart_sigma`, `auraflow` | Legacy/core Stable Diffusion-style architectures |
 
 ---
 
@@ -157,6 +181,9 @@ network:
 | `transformer_only` | bool | true | Only apply to transformer blocks |
 | `lokr_full_rank` | bool | false | Use full rank for LoKr |
 | `lokr_factor` | int | -1 | LoKr factor (-1 = auto find largest) |
+| `old_lokr_format` | bool | false | Save/use the older LoKr format |
+| `split_multistage_loras` | bool | true | Split LoRAs for multistage models when supported |
+| `layer_offloading` | bool | false | Experimental network layer offloading |
 | `pretrained_lora_path` | string | null | Initialize from existing LoRA |
 
 ### Layer Targeting
@@ -474,9 +501,9 @@ job: extension
 config:
   name: "my_flux_lora_v1"
   process:
-    - type: 'sd_trainer'
+    - type: 'diffusion_trainer'
       training_folder: "output"
-      device: cuda:0
+      device: cuda
       trigger_word: "ohwx"
 
       network:

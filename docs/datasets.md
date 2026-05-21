@@ -162,13 +162,13 @@ datasets:
 
 ### For Video Models (Wan, LTX, etc.)
 
-```
+```text
 video_dataset/
-├── video001.mp4
-├── video001.txt
-├── video002.mp4
-├── video002.txt
-└── ...
+|-- video001.mp4
+|-- video001.txt
+|-- video002.mp4
+|-- video002.txt
+`-- ...
 ```
 
 Config:
@@ -193,6 +193,47 @@ datasets:
     do_i2v: true    # Use first frame as conditioning
     num_frames: 41
 ```
+
+---
+
+## Reference And Audio Datasets
+
+Some current UI presets expose reference-frame/image conditioning and audio loading.
+
+```yaml
+datasets:
+  - folder_path: "/path/to/videos_or_images"
+    reference_path: "/path/to/reference_images"       # or a list of paths
+    reference_cache_path: "/path/to/reference_cache"
+    require_reference: true
+    reference_frames: 0
+    reference_downscale: 1
+```
+
+LTX and ACE-Step style workflows can load audio from video/audio assets:
+
+```yaml
+datasets:
+  - folder_path: "/path/to/videos"
+    do_audio: true
+    audio_normalize: true
+    audio_preserve_pitch: false
+    fps: 24
+    auto_frame_count: false
+```
+
+Wan VACE and edit/outpaint workflows can combine control, mask, and reference inputs:
+
+```yaml
+datasets:
+  - folder_path: "/path/to/targets"
+    control_path: "/path/to/source_or_conditioning"
+    mask_path: "/path/to/masks"
+    mask_min_value: 0.0
+    default_caption: "Extend the scene only inside the white masked area."
+```
+
+Multi-control models also accept `control_path_1`, `control_path_2`, and `control_path_3`.
 
 ---
 

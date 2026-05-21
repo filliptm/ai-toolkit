@@ -491,7 +491,7 @@ Example advanced configuration combining multiple techniques:
 
 ```yaml
 process:
-  - type: 'sd_trainer'
+  - type: 'diffusion_trainer'
     trigger_word: "sks"
 
     network:
