@@ -326,7 +326,6 @@ class ZImageModel(BaseModel):
     ):
         if self.model.device != self.device_torch:
             self.model.to(self.device_torch, dtype=self.torch_dtype)
-            self.model.to(self.device_torch)
 
         sc = self.get_bucket_divisibility()
         gen_config.width = int(gen_config.width // sc * sc)
@@ -573,6 +572,9 @@ class ZImageModel(BaseModel):
         controlnet_block_samples=None,
         **kwargs,
     ):
+        if self.model.device == torch.device("cpu"):
+            self.model.to(self.device_torch)
+
         latent_model_input = latent_model_input.unsqueeze(2)
         latent_model_input_list = list(latent_model_input.unbind(dim=0))
 

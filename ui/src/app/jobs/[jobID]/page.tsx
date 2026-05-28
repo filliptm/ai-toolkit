@@ -25,13 +25,13 @@ export default function JobPage({ params }: { params: { jobID: string } }) {
     <>
       {/* Fixed top bar */}
       <TopBar>
-        <div>
-          <Button className="text-gray-500 dark:text-gray-300 px-3 mt-1" onClick={() => redirect('/jobs')}>
+        <div className="flex-shrink-0">
+          <Button className="text-gray-500 dark:text-gray-300 pl-0 pr-1 sm:px-3 mt-1" onClick={() => redirect('/jobs')}>
             <FaChevronLeft />
           </Button>
         </div>
-        <div>
-          <h1 className="text-lg">{title}</h1>
+        <div className="min-w-0 flex-shrink">
+          <h1 className="text-base sm:text-lg truncate">{title}</h1>
         </div>
         <div className="flex-1"></div>
         {job && (

@@ -1,8 +1,11 @@
 import React from 'react';
 import useFilesList from '@/hooks/useFilesList';
-import Link from 'next/link';
-import { Loader2, AlertCircle, Download, Box, Brain } from 'lucide-react';
+import { Loader2, AlertCircle, Download, Box, Brain, Trash2 } from 'lucide-react';
 import classNames from 'classnames';
+import { openMergeLoRAsModal } from './MergeLoRAsModal';
+import { getFilename, getFoldername } from '@/utils/basic';
+import { openConfirm } from './ConfirmModal';
+import { apiClient } from '@/utils/api';
 
 function getPathParts(filePath: string) {
   return filePath.split(/[\\/]/).filter(Boolean);
@@ -17,7 +20,15 @@ function getCheckpointName(filePath: string) {
   return fileName.replace(/\.safetensors$/, '');
 }
 
-export default function FilesWidget({ jobID, className }: { jobID: string; className?: string }) {
+export default function FilesWidget({
+  jobID,
+  jobName,
+  className,
+}: {
+  jobID: string;
+  jobName?: string;
+  className?: string;
+}) {
   const { files, status, refreshFiles } = useFilesList(jobID, 5000);
 
   const cleanSize = (size: number) => {
@@ -32,6 +43,26 @@ export default function FilesWidget({ jobID, className }: { jobID: string; class
     }
   };
 
+  const handleDeleteFile = (filePath: string) => {
+    const fileName = getFilename(filePath);
+    openConfirm({
+      title: 'Delete Checkpoint',
+      message: `Are you sure you want to delete "${fileName}"? This action cannot be undone.`,
+      type: 'warning',
+      confirmText: 'Delete',
+      onConfirm: () => {
+        apiClient
+          .post('/api/files/delete', { filePath })
+          .then(() => {
+            refreshFiles();
+          })
+          .catch(error => {
+            console.error('Error deleting checkpoint:', error);
+          });
+      },
+    });
+  };
+
   return (
     <div className={classNames('bg-gray-900 rounded-xl shadow-lg overflow-hidden border border-gray-800', className)}>
       <div className="bg-gray-800 px-4 py-3 flex items-center justify-between">
@@ -40,6 +71,24 @@ export default function FilesWidget({ jobID, className }: { jobID: string; class
           <h2 className="font-semibold text-gray-100">Checkpoints</h2>
           <span className="px-2 py-0.5 bg-gray-700 rounded-full text-xs text-gray-300">{files.length}</span>
         </div>
+        {files.length > 0 && (
+          <span
+            className="px-3 py-1 rounded-full text-sm bg-purple-500/10 text-purple-500 uppercase cursor-pointer hover:bg-purple-500/20"
+            onClick={() => {
+              const outputName = `${jobName || 'checkpoint'}_merged`;
+              openMergeLoRAsModal(
+                getFoldername(files[0].path),
+                outputName,
+                files.map(f => ({ path: f.path })),
+                () => {
+                  refreshFiles();
+                },
+              );
+            }}
+          >
+            merge
+          </span>
+        )}
       </div>
 
       <div className="p-2">
@@ -61,13 +110,15 @@ export default function FilesWidget({ jobID, className }: { jobID: string; class
             {files.map((file, index) => {
               const nameWithoutExt = getCheckpointName(file.path);
               return (
-                <a
+                <div
                   key={index}
-                  target="_blank"
-                  href={`/api/files/${encodeURIComponent(file.path)}`}
                   className="group flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-gray-800 transition-all duration-200"
                 >
-                  <div className="flex items-center space-x-2 min-w-0">
+                  <a
+                    target="_blank"
+                    href={`/api/files/${encodeURIComponent(file.path)}`}
+                    className="flex items-center space-x-2 min-w-0 flex-1"
+                  >
                     <Box className="w-4 h-4 text-purple-600 dark:text-purple-400 flex-shrink-0" />
                     <div className="flex flex-col min-w-0">
                       <div className="flex text-sm text-gray-200">
@@ -77,14 +128,26 @@ export default function FilesWidget({ jobID, className }: { jobID: string; class
                       </div>
                       <span className="text-xs text-gray-500">.safetensors</span>
                     </div>
-                  </div>
+                  </a>
                   <div className="flex items-center space-x-3 flex-shrink-0">
                     <span className="text-xs text-gray-400">{cleanSize(file.size)}</span>
-                    <div className="bg-purple-500 bg-opacity-0 group-hover:bg-opacity-10 rounded-full p-1 transition-all">
+                    <a
+                      target="_blank"
+                      href={`/api/files/${encodeURIComponent(file.path)}`}
+                      className="bg-purple-500 bg-opacity-0 group-hover:bg-opacity-10 rounded-full p-1 transition-all"
+                    >
                       <Download className="w-3 h-3 text-purple-600 dark:text-purple-400" />
-                    </div>
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteFile(file.path)}
+                      className="bg-red-500 bg-opacity-0 group-hover:bg-opacity-10 hover:!bg-opacity-30 rounded-full p-1 transition-all"
+                      title="Delete checkpoint"
+                    >
+                      <Trash2 className="w-3 h-3 text-red-500" />
+                    </button>
                   </div>
-                </a>
+                </div>
               );
             })}
           </div>

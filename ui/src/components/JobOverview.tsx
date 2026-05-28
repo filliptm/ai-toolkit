@@ -5,12 +5,16 @@ import useSampleImages from '@/hooks/useSampleImages';
 import useFilesList from '@/hooks/useFilesList';
 import useJobLossLog, { LossPoint } from '@/hooks/useJobLossLog';
 import { getTotalSteps } from '@/utils/jobs';
-import { Cpu, HardDrive, Info, Gauge, Activity, ImageIcon, Brain, Terminal } from 'lucide-react';
+import { Cpu, HardDrive, Info, Gauge, Activity, ImageIcon, Brain, Terminal, Download, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import useJobLog from '@/hooks/useJobLog';
 import SampleImageViewer from './SampleImageViewer';
 import { JobConfig } from '@/types';
+import { openConfirm } from './ConfirmModal';
+import { apiClient } from '@/utils/api';
+import { getFoldername } from '@/utils/basic';
+import { openMergeLoRAsModal } from './MergeLoRAsModal';
 
 interface JobOverviewProps {
   job: Job;
@@ -200,7 +204,7 @@ export default function JobOverview({ job }: JobOverviewProps) {
 
   const { log, status: statusLog } = useJobLog(job.id, 2000);
   const { sampleImages, status: sampleStatus, refreshSampleImages } = useSampleImages(job.id, 5000);
-  const { files } = useFilesList(job.id, 5000);
+  const { files, refreshFiles } = useFilesList(job.id, 5000);
   const { gpuList, isGPUInfoLoaded } = useGPUInfo(gpuIds, 5000);
   const { cpuInfo } = useCPUInfo(5000);
   const { series: lossSeries, lossKeys, status: lossStatus } = useJobLossLog(job.id, 2000);
@@ -276,6 +280,38 @@ export default function JobOverview({ job }: JobOverviewProps) {
       default:
         return 'bg-gray-500/10 text-gray-400';
     }
+  };
+
+  const handleDeleteFile = (filePath: string) => {
+    const fileName = getFileName(filePath);
+    openConfirm({
+      title: 'Delete Checkpoint',
+      message: `Are you sure you want to delete "${fileName}"? This action cannot be undone.`,
+      type: 'warning',
+      confirmText: 'Delete',
+      onConfirm: () => {
+        apiClient
+          .post('/api/files/delete', { filePath })
+          .then(() => {
+            refreshFiles();
+          })
+          .catch(error => {
+            console.error('Error deleting checkpoint:', error);
+          });
+      },
+    });
+  };
+
+  const handleMergeFiles = () => {
+    if (files.length === 0) return;
+    openMergeLoRAsModal(
+      getFoldername(files[0].path),
+      `${job.name || 'checkpoint'}_merged`,
+      files.map(file => ({ path: file.path })),
+      () => {
+        refreshFiles();
+      },
+    );
   };
 
   return (
@@ -367,7 +403,20 @@ export default function JobOverview({ job }: JobOverviewProps) {
           <Panel
             title="Checkpoints"
             icon={<Brain className="w-4 h-4 text-purple-400" />}
-            right={files.length ? `${files.length}` : undefined}
+            right={
+              files.length ? (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleMergeFiles}
+                    className="rounded-md bg-purple-500/10 px-2 py-1 text-[11px] uppercase text-purple-400 hover:bg-purple-500/20"
+                  >
+                    merge
+                  </button>
+                  <span>{files.length}</span>
+                </div>
+              ) : undefined
+            }
             bodyClassName="p-2 overflow-y-auto"
           >
             {jobType === 'train' && files.length > 0 && (
@@ -375,15 +424,35 @@ export default function JobOverview({ job }: JobOverviewProps) {
                 {files.slice(0, 6).map(file => {
                   const fileName = getCheckpointName(file.path) || getFileName(file.path);
                   return (
-                    <a
+                    <div
                       key={file.path}
-                      href={`/api/files/${encodeURIComponent(file.path)}`}
-                      target="_blank"
                       className="flex items-center justify-between gap-3 rounded-md border border-gray-800 bg-gray-950 px-2 py-1.5 hover:bg-gray-800"
                     >
-                      <span className="truncate text-gray-200">{fileName}</span>
+                      <a
+                        href={`/api/files/${encodeURIComponent(file.path)}`}
+                        target="_blank"
+                        className="min-w-0 flex-1 truncate text-gray-200"
+                      >
+                        {fileName}
+                      </a>
                       <span className="flex-shrink-0 text-gray-400">{cleanSize(file.size)}</span>
-                    </a>
+                      <a
+                        href={`/api/files/${encodeURIComponent(file.path)}`}
+                        target="_blank"
+                        className="flex-shrink-0 rounded p-1 text-purple-400 hover:bg-purple-500/10"
+                        title="Download checkpoint"
+                      >
+                        <Download className="h-3 w-3" />
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteFile(file.path)}
+                        className="flex-shrink-0 rounded p-1 text-red-500 hover:bg-red-500/10"
+                        title="Delete checkpoint"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    </div>
                   );
                 })}
               </div>
