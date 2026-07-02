@@ -139,6 +139,7 @@ export default function JobOverview({ job }: JobOverviewProps) {
   const { log, status: statusLog } = useJobLog(job.id, 2000);
   const { sampleImages, status: sampleStatus, refreshSampleImages } = useSampleImages(job.id, 5000);
   const { files, refreshFiles } = useFilesList(job.id, 5000);
+  const checkpointFiles = useMemo(() => files.filter(file => getFileName(file.path) !== 'optimizer.pt'), [files]);
   const { gpuList, isGPUInfoLoaded } = useGPUInfo(gpuIds, 5000);
   const { cpuInfo } = useCPUInfo(5000);
   const { series: lossSeries, lossKeys, status: lossStatus } = useJobLossLog(job.id, 2000);
@@ -237,11 +238,11 @@ export default function JobOverview({ job }: JobOverviewProps) {
   };
 
   const handleMergeFiles = () => {
-    if (files.length === 0) return;
+    if (checkpointFiles.length === 0) return;
     openMergeLoRAsModal(
-      getFoldername(files[0].path),
+      getFoldername(checkpointFiles[0].path),
       `${job.name || 'checkpoint'}_merged`,
-      files.map(file => ({ path: file.path })),
+      checkpointFiles.map(file => ({ path: file.path })),
       () => {
         refreshFiles();
       },
@@ -357,7 +358,7 @@ export default function JobOverview({ job }: JobOverviewProps) {
           title="Checkpoints"
           icon={<Brain className="w-4 h-4 text-purple-400" />}
           right={
-            files.length ? (
+            checkpointFiles.length ? (
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -366,15 +367,15 @@ export default function JobOverview({ job }: JobOverviewProps) {
                 >
                   merge
                 </button>
-                <span>{files.length}</span>
+                <span>{checkpointFiles.length}</span>
               </div>
             ) : undefined
           }
           bodyClassName="p-2 overflow-y-auto"
         >
-          {jobType === 'train' && files.length > 0 && (
+          {jobType === 'train' && checkpointFiles.length > 0 && (
             <div className="space-y-1 text-xs">
-              {files.slice(0, 6).map(file => {
+              {checkpointFiles.slice(0, 6).map(file => {
                 const fileName = getCheckpointName(file.path) || getFileName(file.path);
                 return (
                   <div
@@ -410,7 +411,7 @@ export default function JobOverview({ job }: JobOverviewProps) {
               })}
             </div>
           )}
-          {(!jobType || files.length === 0) && (
+          {(!jobType || checkpointFiles.length === 0) && (
             <div className="flex min-h-20 items-center justify-center text-sm text-gray-400">No checkpoints yet</div>
           )}
         </Panel>

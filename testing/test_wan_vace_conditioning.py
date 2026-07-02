@@ -79,6 +79,7 @@ def _fake_model():
     model.device_torch = torch.device("cpu")
     model.torch_dtype = torch.float32
     model.vace_default_mask = "full"
+    model.vace_require_mask = False
     model.vace_conditioning_scale = [1.0] * 8
     return model
 

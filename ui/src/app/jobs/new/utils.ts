@@ -80,6 +80,7 @@ export const handleModelArchChange = (
   const hasReferenceFrames = newArch?.additionalSections?.includes('datasets.reference_frames') || false;
   const hasReferenceDownscale = newArch?.additionalSections?.includes('datasets.reference_downscale') || false;
   const hasNumFrames = newArch?.additionalSections?.includes('datasets.num_frames') || false;
+  const hasAutoFrameCount = newArch?.additionalSections?.includes('datasets.auto_frame_count') || false;
   const controls = newArch?.controls ?? [];
   const datasets = jobConfig.config.process[0].datasets.map(dataset => {
     const newDataset = objectCopy(dataset);
@@ -147,6 +148,9 @@ export const handleModelArchChange = (
     }
     if (!hasReferenceDownscale && 'reference_downscale' in newDataset) {
       delete newDataset.reference_downscale;
+    }
+    if (!hasAutoFrameCount) {
+      delete newDataset.auto_frame_count;
     }
     return newDataset;
   });

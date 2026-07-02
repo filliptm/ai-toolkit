@@ -43,7 +43,9 @@ export async function GET(request: NextRequest, { params }: { params: { jobID: s
   const trainingFolder = await getTrainingFolder();
   const jobFolder = path.join(trainingFolder, job.name);
 
-  if (!fs.existsSync(jobFolder)) {
+  try {
+    await fs.promises.access(jobFolder);
+  } catch {
     return NextResponse.json({ files: [] });
   }
 
@@ -57,6 +59,21 @@ export async function GET(request: NextRequest, { params }: { params: { jobID: s
       };
     })
     .sort((a, b) => b.modified_at - a.modified_at);
+
+  // include the optimizer state if it exists
+  const optimizerPath = path.join(jobFolder, 'optimizer.pt');
+  try {
+    const stats = await fs.promises.stat(optimizerPath);
+    fileObjects.push({
+      path: optimizerPath,
+      size: stats.size,
+      modified_at: stats.mtimeMs,
+    });
+  } catch {
+    // no optimizer state present, skip it
+  }
+
+  fileObjects.sort((a, b) => b.modified_at - a.modified_at);
 
   return NextResponse.json({ files: fileObjects });
 }

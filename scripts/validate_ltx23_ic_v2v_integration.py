@@ -33,6 +33,7 @@ class FakeSD:
     encode_control_in_text_embeddings = False
     use_raw_control_images = False
     te_padding_side = "left"
+    text_embedding_space_version = "ltx2_v2"
     latent_space_version = "ltx2_v2"
     sample_rate = 48000
     vae = SimpleNamespace(config=SimpleNamespace(scale_factor_temporal=8))
@@ -63,7 +64,7 @@ class FakeFileItem:
     def __init__(self, idx: int):
         self.path = f"target_{idx}.mp4"
         self.reference_path = f"reference_{idx}.mp4"
-        self.dataset_config = SimpleNamespace()
+        self.dataset_config = SimpleNamespace(load_image_when_caching_latents=False)
         self.is_latent_cached = True
         self._encoded_latent = torch.full((4, 2, 4, 4), idx, dtype=torch.float32)
         self._cached_first_frame_latent = None

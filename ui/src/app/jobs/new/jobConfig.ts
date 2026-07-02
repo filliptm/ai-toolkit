@@ -36,6 +36,10 @@ export const defaultSliderConfig: SliderConfig = {
   anchor_class: '',
 };
 
+export const defaultCompileOptions = {
+  block_compile: true,
+};
+
 export const defaultJobConfig: JobConfig = {
   job: 'extension',
   config: {
@@ -113,6 +117,7 @@ export const defaultJobConfig: JobConfig = {
           arch: 'flex1',
           low_vram: false,
           model_kwargs: {},
+          compile: false,
         },
         sample: defaultSampleConfig,
       },
