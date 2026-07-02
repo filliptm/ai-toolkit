@@ -75,6 +75,10 @@ export const handleModelArchChange = (
   const hasMultiControlPaths = newArch?.additionalSections?.includes('datasets.multi_control_paths') || false;
   const hasMaskPath = newArch?.additionalSections?.includes('datasets.mask_path') || false;
   const hasReferencePath = newArch?.additionalSections?.includes('datasets.reference_path') || false;
+  const hasReferenceCachePath = newArch?.additionalSections?.includes('datasets.reference_cache_path') || false;
+  const hasRequireReference = newArch?.additionalSections?.includes('datasets.require_reference') || false;
+  const hasReferenceFrames = newArch?.additionalSections?.includes('datasets.reference_frames') || false;
+  const hasReferenceDownscale = newArch?.additionalSections?.includes('datasets.reference_downscale') || false;
   const hasNumFrames = newArch?.additionalSections?.includes('datasets.num_frames') || false;
   const controls = newArch?.controls ?? [];
   const datasets = jobConfig.config.process[0].datasets.map(dataset => {
@@ -131,6 +135,18 @@ export const handleModelArchChange = (
     }
     if (!hasReferencePath && 'reference_path' in newDataset) {
       delete newDataset.reference_path;
+    }
+    if (!hasReferenceCachePath && 'reference_cache_path' in newDataset) {
+      delete newDataset.reference_cache_path;
+    }
+    if (!hasRequireReference && 'require_reference' in newDataset) {
+      delete newDataset.require_reference;
+    }
+    if (!hasReferenceFrames && 'reference_frames' in newDataset) {
+      delete newDataset.reference_frames;
+    }
+    if (!hasReferenceDownscale && 'reference_downscale' in newDataset) {
+      delete newDataset.reference_downscale;
     }
     return newDataset;
   });

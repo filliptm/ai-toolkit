@@ -56,6 +56,7 @@ class FileItemDTO(
 ):
     def __init__(self, *args, **kwargs):
         self.path = kwargs.get("path", "")
+        self.reference_path = kwargs.get("reference_path", None)
         self.dataset_config: "DatasetConfig" = kwargs.get("dataset_config", None)
         self.is_video = self.dataset_config.num_frames > 1 or self.dataset_config.auto_frame_count
         self.is_audio_model = kwargs.get("is_audio_model", False)
@@ -208,6 +209,7 @@ class DataLoaderBatchDTO:
             self.audio_tensor: Union[torch.Tensor, None] = None
             self.first_frame_latents: Union[torch.Tensor, None] = None
             self.audio_latents: Union[torch.Tensor, None] = None
+            self.reference_latents: Union[torch.Tensor, None] = None
 
             # just for holding noise and preds during training
             self.audio_target: Union[torch.Tensor, None] = None
@@ -248,6 +250,18 @@ class DataLoaderBatchDTO:
                             else torch.zeros_like(
                                 self.file_items[0]._cached_audio_latent
                             ).unsqueeze(0)
+                            for x in self.file_items
+                        ]
+                    )
+                if any([x._cached_reference_latent is not None for x in self.file_items]):
+                    base_reference_latent = next(
+                        x._cached_reference_latent for x in self.file_items if x._cached_reference_latent is not None
+                    )
+                    self.reference_latents = torch.cat(
+                        [
+                            x._cached_reference_latent.unsqueeze(0)
+                            if x._cached_reference_latent is not None
+                            else torch.zeros_like(base_reference_latent).unsqueeze(0)
                             for x in self.file_items
                         ]
                     )
@@ -468,6 +482,7 @@ class DataLoaderBatchDTO:
         del self.audio_pred
         del self.first_frame_latents
         del self.audio_latents
+        del self.reference_latents
         for file_item in self.file_items:
             file_item.cleanup()
 

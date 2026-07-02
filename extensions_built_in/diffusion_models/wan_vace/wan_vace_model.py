@@ -44,6 +44,7 @@ class WanVACEModel(Wan21):
         self.vace_task = self.model_config.model_kwargs.get("vace_task", "edit")
         self.vace_conditioning_scale = self.model_config.model_kwargs.get("conditioning_scale", 1.0)
         self.vace_default_mask = self.model_config.model_kwargs.get("default_mask", "full")
+        self.vace_require_mask = self.model_config.model_kwargs.get("require_mask", False)
 
     def get_bucket_divisibility(self):
         return 16
@@ -268,6 +269,10 @@ class WanVACEModel(Wan21):
             raise ValueError(
                 "Wan VACE training requires datasets.control_path with source A images/videos matching target B filenames"
             )
+        if self.vace_require_mask and batch.mask_tensor is None:
+            raise ValueError(
+                "Wan VACE outpaint training requires datasets.mask_path with white editable regions and black preserved regions"
+            )
 
         _, _, latent_frames, latent_h, latent_w = latent_model_input.shape
         temporal_scale = 2 ** sum(self.vae.temperal_downsample)
@@ -370,6 +375,8 @@ class WanVACEModel(Wan21):
         pipeline.set_progress_bar_config(disable=False)
         if gen_config.ctrl_img is None:
             raise ValueError("Wan VACE samples require sample.ctrl_img")
+        if self.vace_require_mask and gen_config.mask_img is None:
+            raise ValueError("Wan VACE outpaint samples require sample.mask_img")
 
         num_frames = ((gen_config.num_frames - 1) // 4) * 4 + 1
         gen_config.num_frames = num_frames

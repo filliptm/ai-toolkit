@@ -1,4 +1,5 @@
 import base64
+import copy
 import glob
 import hashlib
 import json
@@ -17,7 +18,7 @@ from tqdm import tqdm
 from transformers import CLIPImageProcessor, CLIPVisionModelWithProjection, SiglipImageProcessor
 
 from toolkit.audio.preserve_pitch import time_stretch_preserve_pitch
-from toolkit.basic import flush, value_map
+from toolkit.basic import flush, get_quick_signature_string, value_map
 from toolkit.buckets import get_bucket_for_image_size, get_resolution
 from toolkit.config_modules import ControlTypes
 from toolkit.control_generator import ControlGenerator
@@ -1886,7 +1887,9 @@ class LatentCachingFileItemDTOMixin:
         self._encoded_latent: Union[torch.Tensor, None] = None
         self._cached_first_frame_latent: Union[torch.Tensor, None] = None
         self._cached_audio_latent: Union[torch.Tensor, None] = None
+        self._cached_reference_latent: Union[torch.Tensor, None] = None
         self._latent_path: Union[str, None] = None
+        self._reference_latent_path: Union[str, None] = None
         self.is_latent_cached = False
         self.is_caching_to_disk = False
         self.is_caching_to_memory = False
@@ -1935,6 +1938,16 @@ class LatentCachingFileItemDTOMixin:
             item["sample_rate"] = self.sample_rate
         return item
 
+    def get_reference_latent_info_dict(self: 'FileItemDTO'):
+        item = self.get_latent_info_dict()
+        item["reference_filename"] = os.path.basename(self.reference_path)
+        item["reference_signature"] = get_quick_signature_string(self.reference_path)
+        if self.dataset_config.reference_frames:
+            item["reference_frames"] = self.dataset_config.reference_frames
+        if self.dataset_config.reference_downscale != 1:
+            item["reference_downscale"] = self.dataset_config.reference_downscale
+        return item
+
     def get_latent_path(self: 'FileItemDTO', recalculate=False):
         if self._latent_path is not None and not recalculate:
             return self._latent_path
@@ -1952,6 +1965,23 @@ class LatentCachingFileItemDTOMixin:
 
         return self._latent_path
 
+    def get_reference_latent_path(self: 'FileItemDTO', recalculate=False):
+        if self.reference_path is None:
+            return None
+        if self._reference_latent_path is not None and not recalculate:
+            return self._reference_latent_path
+
+        reference_cache_path = self.dataset_config.reference_cache_path
+        if reference_cache_path is None:
+            reference_cache_path = os.path.join(os.path.dirname(self.reference_path), '_latent_cache')
+        hash_dict = self.get_reference_latent_info_dict()
+        filename_no_ext = os.path.splitext(os.path.basename(self.reference_path))[0]
+        hash_input = json.dumps(hash_dict, sort_keys=True).encode('utf-8')
+        hash_str = base64.urlsafe_b64encode(hashlib.md5(hash_input).digest()).decode('ascii')
+        hash_str = hash_str.replace('=', '')
+        self._reference_latent_path = os.path.join(reference_cache_path, f'{filename_no_ext}_{hash_str}.safetensors')
+        return self._reference_latent_path
+
     def cleanup_latent(self):
         if self._encoded_latent is not None:
             if not self.is_caching_to_memory:
@@ -1959,6 +1989,7 @@ class LatentCachingFileItemDTOMixin:
                 self._encoded_latent = None
                 self._cached_first_frame_latent = None
                 self._cached_audio_latent = None
+                self._cached_reference_latent = None
             else:
                 # move it back to cpu
                 self._encoded_latent = self._encoded_latent.to('cpu')
@@ -1966,6 +1997,10 @@ class LatentCachingFileItemDTOMixin:
                     self._cached_first_frame_latent = self._cached_first_frame_latent.to('cpu')
                 if self._cached_audio_latent is not None:
                     self._cached_audio_latent = self._cached_audio_latent.to('cpu')
+                if self._cached_reference_latent is not None:
+                    self._cached_reference_latent = self._cached_reference_latent.to('cpu')
+        elif self._cached_reference_latent is not None and not self.is_caching_to_memory:
+            self._cached_reference_latent = None
 
     def get_latent(self, device=None):
         if not self.is_latent_cached:
@@ -1982,6 +2017,13 @@ class LatentCachingFileItemDTOMixin:
                 self._cached_first_frame_latent = state_dict['first_frame_latent']
             if 'audio_latent' in state_dict:
                 self._cached_audio_latent = state_dict['audio_latent']
+            if 'reference_latent' in state_dict:
+                self._cached_reference_latent = state_dict['reference_latent']
+            elif self.reference_path is not None:
+                reference_latent_path = self.get_reference_latent_path()
+                if reference_latent_path is not None and os.path.exists(reference_latent_path):
+                    reference_state_dict = load_file(reference_latent_path, device='cpu')
+                    self._cached_reference_latent = reference_state_dict['reference_latent']
             if 'num_frames' in state_dict:
                 self.num_frames = int(state_dict['num_frames'].item())
         return self._encoded_latent
@@ -2016,8 +2058,11 @@ class LatentCachingMixin:
                 file_item.latent_load_device = self.sd.device
 
                 latent_path = file_item.get_latent_path(recalculate=True)
+                reference_latent_path = file_item.get_reference_latent_path(recalculate=True) if file_item.reference_path is not None else None
                 # check if it is saved to disk already
-                if os.path.exists(latent_path):
+                has_latent_cache = os.path.exists(latent_path)
+                has_reference_cache = reference_latent_path is None or os.path.exists(reference_latent_path)
+                if has_latent_cache and has_reference_cache:
                     if to_memory:
                         # load it into memory
                         state_dict = load_file(latent_path, device='cpu')
@@ -2026,6 +2071,11 @@ class LatentCachingMixin:
                             file_item._cached_first_frame_latent = state_dict['first_frame_latent'].to('cpu', dtype=self.sd.torch_dtype)
                         if 'audio_latent' in state_dict:
                             file_item._cached_audio_latent = state_dict['audio_latent'].to('cpu', dtype=self.sd.torch_dtype)
+                        if 'reference_latent' in state_dict:
+                            file_item._cached_reference_latent = state_dict['reference_latent'].to('cpu', dtype=self.sd.torch_dtype)
+                        elif reference_latent_path is not None:
+                            reference_state_dict = load_file(reference_latent_path, device='cpu')
+                            file_item._cached_reference_latent = reference_state_dict['reference_latent'].to('cpu', dtype=self.sd.torch_dtype)
                 else:
                     # not saved to disk, calculate
                     # load the image first
@@ -2035,6 +2085,7 @@ class LatentCachingMixin:
                     state_dict = OrderedDict()
                     first_frame_latent = None
                     audio_latent = None
+                    reference_latent = None
                     frames = None
                     # add batch dimension
                     try:
@@ -2068,6 +2119,45 @@ class LatentCachingMixin:
                     
                     if is_video:
                         state_dict['num_frames'] = torch.tensor(file_item.num_frames, dtype=torch.int32)
+
+                    if file_item.reference_path is not None:
+                        reference_file_item = copy.copy(file_item)
+                        reference_file_item.path = file_item.reference_path
+                        reference_file_item.reference_path = None
+                        reference_file_item.tensor = None
+                        reference_file_item.audio_data = None
+                        reference_file_item.audio_tensor = None
+                        if self.dataset_config.reference_frames and self.dataset_config.reference_frames > 0:
+                            reference_file_item.num_frames = self.dataset_config.reference_frames
+                        reference_file_item.load_and_process_image(self.transform, only_load_latents=True)
+                        reference_imgs = reference_file_item.tensor.unsqueeze(0).to(device, dtype=dtype)
+                        if self.dataset_config.reference_downscale != 1:
+                            scale_factor = 1.0 / float(self.dataset_config.reference_downscale)
+                            if reference_imgs.dim() == 5:
+                                bsz, frames, channels, height, width = reference_imgs.shape
+                                resized = torch.nn.functional.interpolate(
+                                    reference_imgs.reshape(bsz * frames, channels, height, width),
+                                    scale_factor=scale_factor,
+                                    mode='bilinear',
+                                    align_corners=False,
+                                )
+                                reference_imgs = resized.reshape(bsz, frames, channels, resized.shape[-2], resized.shape[-1])
+                            else:
+                                reference_imgs = torch.nn.functional.interpolate(
+                                    reference_imgs,
+                                    scale_factor=scale_factor,
+                                    mode='bilinear',
+                                    align_corners=False,
+                                )
+                        reference_latent = self.sd.encode_images(reference_imgs).squeeze(0)
+                        if to_disk:
+                            reference_state_dict = OrderedDict()
+                            reference_state_dict['reference_latent'] = reference_latent.clone().detach().cpu()
+                            reference_meta = get_meta_for_safetensors(file_item.get_reference_latent_info_dict())
+                            os.makedirs(os.path.dirname(reference_latent_path), exist_ok=True)
+                            save_file(reference_state_dict, reference_latent_path, metadata=reference_meta)
+                        del reference_imgs
+                        reference_file_item.cleanup()
                     
                     # save_latent
                     if to_disk:
@@ -2083,6 +2173,8 @@ class LatentCachingMixin:
                             file_item._cached_first_frame_latent = first_frame_latent.to('cpu', dtype=self.sd.torch_dtype)
                         if audio_latent is not None:
                             file_item._cached_audio_latent = audio_latent.to('cpu', dtype=self.sd.torch_dtype)
+                        if reference_latent is not None:
+                            file_item._cached_reference_latent = reference_latent.to('cpu', dtype=self.sd.torch_dtype)
 
                     del imgs
                     del latent
@@ -2091,6 +2183,7 @@ class LatentCachingMixin:
                     del state_dict
                     del first_frame_latent
                     del audio_latent
+                    del reference_latent
                     file_item.cleanup()
 
                 file_item.is_latent_cached = True

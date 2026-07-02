@@ -1,5 +1,5 @@
 'use client';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   ModelArch,
   findModelArch,
@@ -29,6 +29,7 @@ import { FlipHorizontal2, FlipVertical2 } from 'lucide-react';
 import { handleModelArchChange } from './utils';
 import { IoFlaskSharp } from 'react-icons/io5';
 import { isMac } from '@/helpers/basic';
+import { apiClient } from '@/utils/api';
 
 type Props = {
   jobConfig: JobConfig;
@@ -201,6 +202,69 @@ export default function SimpleJob({
   }, [modelArch]);
 
   const showGPUSelect = !isMac();
+  const [outpaintDataset, setOutpaintDataset] = useState('C:/AI/ai-toolkit/datasets/zimage_green_outpaint_4k');
+  const [outpaintOutput, setOutpaintOutput] = useState('C:/AI/ai-toolkit/datasets/wan_vace_white_outpaint_4k');
+  const [outpaintOverwrite, setOutpaintOverwrite] = useState(true);
+  const [outpaintStatus, setOutpaintStatus] = useState<'idle' | 'running' | 'success' | 'error'>('idle');
+  const [outpaintMessage, setOutpaintMessage] = useState('');
+  const [referencePairStatus, setReferencePairStatus] = useState<Record<number, 'idle' | 'running' | 'success' | 'error'>>({});
+  const [referencePairMessage, setReferencePairMessage] = useState<Record<number, string>>({});
+
+  const prepareOutpaintDataset = async () => {
+    if (outpaintStatus === 'running') return;
+    setOutpaintStatus('running');
+    setOutpaintMessage('Preparing dataset...');
+    try {
+      const res = await apiClient.post('/api/datasets/outpaint', {
+        mode: 'convert-green',
+        dataset: outpaintDataset,
+        output: outpaintOutput,
+        overwrite: outpaintOverwrite,
+      });
+      const data = res.data;
+      setJobConfig(data.targetPath, 'config.process[0].datasets[0].folder_path');
+      setJobConfig(data.controlPath, 'config.process[0].datasets[0].control_path');
+      setJobConfig(data.maskPath, 'config.process[0].datasets[0].mask_path');
+      setJobConfig(0.0, 'config.process[0].datasets[0].mask_min_value');
+      if (data.samples?.length > 0) {
+        setJobConfig(data.samples, 'config.process[0].sample.samples');
+      }
+      const triplets = data.validation?.valid_triplets ?? data.validation?.target_images ?? 0;
+      const problems = data.validation?.problems?.length ?? 0;
+      setOutpaintMessage(`Prepared ${triplets} VACE outpaint triplets with ${problems} validation issues.`);
+      setOutpaintStatus('success');
+    } catch (error: any) {
+      setOutpaintMessage(error?.response?.data?.error || error?.message || 'Failed to prepare outpaint dataset.');
+      setOutpaintStatus('error');
+    }
+  };
+
+  const validateReferencePairs = async (datasetIndex: number) => {
+    const dataset = jobConfig.config.process[0].datasets[datasetIndex];
+    if (!dataset.reference_path || Array.isArray(dataset.reference_path)) return;
+    setReferencePairStatus(prev => ({ ...prev, [datasetIndex]: 'running' }));
+    setReferencePairMessage(prev => ({ ...prev, [datasetIndex]: 'Checking reference pairs...' }));
+    try {
+      const res = await apiClient.post('/api/datasets/referencePairs', {
+        targetPath: dataset.folder_path,
+        referencePath: dataset.reference_path,
+        mediaType: dataset.num_frames > 1 || dataset.auto_frame_count ? 'video' : 'image',
+      });
+      const data = res.data;
+      const problemCount = (data.missingReferences?.length ?? 0) + (data.extraReferences?.length ?? 0);
+      setReferencePairMessage(prev => ({
+        ...prev,
+        [datasetIndex]: `${data.matchedCount}/${data.targetCount} matched references, ${problemCount} listed issues.`,
+      }));
+      setReferencePairStatus(prev => ({ ...prev, [datasetIndex]: problemCount === 0 ? 'success' : 'error' }));
+    } catch (error: any) {
+      setReferencePairMessage(prev => ({
+        ...prev,
+        [datasetIndex]: error?.response?.data?.error || error?.message || 'Failed to validate reference pairs.',
+      }));
+      setReferencePairStatus(prev => ({ ...prev, [datasetIndex]: 'error' }));
+    }
+  };
 
   let numDatasetCols = 4;
   let numSampleTopCols = 4;
@@ -854,6 +918,48 @@ export default function SimpleJob({
         <div>
           <Card title="Datasets">
             <>
+              {modelArch?.additionalSections?.includes('datasets.outpaint_builder') && (
+                <div className="mb-4 p-4 rounded-lg bg-gray-900 border border-gray-700">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <TextInput
+                      label="Green Dataset Root"
+                      value={outpaintDataset}
+                      onChange={setOutpaintDataset}
+                      placeholder="C:/AI/ai-toolkit/datasets/zimage_green_outpaint_4k"
+                    />
+                    <TextInput
+                      label="VACE Output Root"
+                      value={outpaintOutput}
+                      onChange={setOutpaintOutput}
+                      placeholder="C:/AI/ai-toolkit/datasets/wan_vace_white_outpaint_4k"
+                    />
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-3">
+                    <Checkbox label="Overwrite Output" checked={outpaintOverwrite} onChange={setOutpaintOverwrite} />
+                    <button
+                      type="button"
+                      onClick={prepareOutpaintDataset}
+                      disabled={outpaintStatus === 'running'}
+                      className="px-3 py-2 rounded-md bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-400 text-white text-sm transition-colors"
+                    >
+                      {outpaintStatus === 'running' ? 'Preparing...' : 'Prepare VACE Outpaint Dataset'}
+                    </button>
+                    {outpaintMessage && (
+                      <span
+                        className={`text-sm ${
+                          outpaintStatus === 'error'
+                            ? 'text-red-400'
+                            : outpaintStatus === 'success'
+                              ? 'text-green-400'
+                              : 'text-gray-400'
+                        }`}
+                      >
+                        {outpaintMessage}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
               {jobConfig.config.process[0].datasets.map((dataset, i) => (
                 <div key={i} className="p-4 rounded-lg bg-gray-800 relative">
                   <div className="absolute top-2 right-2 flex gap-1">
@@ -928,6 +1034,41 @@ export default function SimpleJob({
                           }
                           options={[{ value: '', label: <>&nbsp;</> }, ...datasetOptions]}
                         />
+                      )}
+                      {modelArch?.additionalSections?.includes('datasets.reference_cache_path') && (
+                        <TextInput
+                          label="Reference Cache"
+                          value={dataset.reference_cache_path ?? ''}
+                          className="pt-2"
+                          onChange={value =>
+                            setJobConfig(
+                              value == '' ? null : value,
+                              `config.process[0].datasets[${i}].reference_cache_path`,
+                            )
+                          }
+                          placeholder="C:/path/to/cache_ref"
+                        />
+                      )}
+                      {modelArch?.additionalSections?.includes('datasets.reference_path') && dataset.reference_path && (
+                        <div className="pt-2">
+                          <button
+                            type="button"
+                            onClick={() => validateReferencePairs(i)}
+                            disabled={referencePairStatus[i] === 'running'}
+                            className="bg-gray-700 hover:bg-gray-600 disabled:opacity-60 rounded px-3 py-2 text-sm transition-colors"
+                          >
+                            {referencePairStatus[i] === 'running' ? 'Checking References...' : 'Check Reference Pairs'}
+                          </button>
+                          {referencePairMessage[i] && (
+                            <div
+                              className={`mt-2 text-xs ${
+                                referencePairStatus[i] === 'error' ? 'text-red-300' : 'text-gray-300'
+                              }`}
+                            >
+                              {referencePairMessage[i]}
+                            </div>
+                          )}
+                        </div>
                       )}
                       {modelArch?.additionalSections?.includes('datasets.multi_control_paths') && (
                         <>
@@ -1016,6 +1157,28 @@ export default function SimpleJob({
                           required
                         />
                       )}
+                      {modelArch?.additionalSections?.includes('datasets.reference_frames') && (
+                        <NumberInput
+                          label="Reference Frames"
+                          className="pt-2"
+                          value={dataset.reference_frames ?? 0}
+                          onChange={value => setJobConfig(value, `config.process[0].datasets[${i}].reference_frames`)}
+                          placeholder="0 uses target frame count"
+                          min={0}
+                        />
+                      )}
+                      {modelArch?.additionalSections?.includes('datasets.reference_downscale') && (
+                        <NumberInput
+                          label="Reference Downscale"
+                          className="pt-2"
+                          value={dataset.reference_downscale ?? 1}
+                          onChange={value =>
+                            setJobConfig(value, `config.process[0].datasets[${i}].reference_downscale`)
+                          }
+                          placeholder="eg. 1"
+                          min={1}
+                        />
+                      )}
                     </div>
                     <div>
                       <FormGroup label="Settings" className="">
@@ -1031,6 +1194,15 @@ export default function SimpleJob({
                           checked={dataset.is_reg || false}
                           onChange={value => setJobConfig(value, `config.process[0].datasets[${i}].is_reg`)}
                         />
+                        {modelArch?.additionalSections?.includes('datasets.require_reference') && (
+                          <Checkbox
+                            label="Require References"
+                            checked={dataset.require_reference || false}
+                            onChange={value =>
+                              setJobConfig(value, `config.process[0].datasets[${i}].require_reference`)
+                            }
+                          />
+                        )}
                         {modelArch?.additionalSections?.includes('datasets.auto_frame_count') && (
                           <Checkbox
                             label="Auto Frame Count"

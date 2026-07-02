@@ -952,6 +952,8 @@ class DiffusionFeatureExtractor7(nn.Module):
         
         velocity_equiv_weight = (1.0 / torch.clamp(tv, min=0.1) ** 2)
 
+        velocity_equiv_weight = (1.0 / torch.clamp(tv, min=0.1) ** 2)
+
         with torch.no_grad():
             target = self.get_pred(target_0_1)
         

@@ -1,392 +1,150 @@
 # Supported Models
 
-This document lists all model architectures supported by AI-Toolkit, along with their specific requirements and recommended settings.
+This document is aligned with the current model registry in `extensions_built_in/*/AI_TOOLKIT_MODELS` and the UI model selector in `ui/src/app/jobs/new/options.ts`.
+
+## Architecture Identifiers
+
+Use these values in `config.process[].model.arch`. The UI may append a suffix such as `:2511` or `:14b-outpaint` for presets; `ModelConfig` strips the suffix before loading the backend model.
+
+| Arch | UI presets / labels | Backend |
+|------|---------------------|---------|
+| `flux` | FLUX.1, Flex.1 | Built-in `StableDiffusion` FLUX path |
+| `flex2` | Flex.2 | `extensions_built_in/flex2/Flex2` |
+| `flux_kontext` | FLUX.1-Kontext-dev | `FluxKontextModel` |
+| `flux2` | FLUX.2 | `Flux2Model` |
+| `flux2_klein_4b` | FLUX.2-klein-base-4B | `Flux2Klein4BModel` |
+| `flux2_klein_9b` | FLUX.2-klein-base-9B | `Flux2Klein9BModel` |
+| `sd15` / `sd1` | SD 1.5 | Built-in SD 1.x path |
+| `sdxl` | SDXL | Built-in SDXL path |
+| `lumina2` | Lumina2 | Built-in Lumina2 path |
+| `chroma` | Chroma | `ChromaModel` |
+| `chroma_radiance` | Chroma Radiance | `ChromaRadianceModel` |
+| `zeta_chroma` | Zeta Chroma | `ZetaChromaModel` |
+| `qwen_image` | Qwen-Image, Qwen-Image-2512 | `QwenImageModel` |
+| `qwen_image_edit` | Qwen-Image-Edit | `QwenImageEditModel` |
+| `qwen_image_edit_plus` | Qwen-Image-Edit-2509/2511 | `QwenImageEditPlusModel` |
+| `hidream` | HiDream | `HidreamModel` |
+| `hidream_e1` | HiDream E1 | `HidreamE1Model` |
+| `hidream_o1` | HiDream-O1 | `HidreamO1Model` |
+| `omnigen2` | OmniGen2 | `OmniGen2Model` |
+| `zimage` | Z-Image, Z-Image Turbo, Z-Image De-Turbo, Z-Image Turbo Outpaint ControlNet | `ZImageModel` |
+| `nucleus_image` | Nucleus-Image | `NucleusImageModel` |
+| `ernie_image` | ERNIE-Image | `ErnieImageModel` |
+| `f-lite` | F-Lite | `FLiteModel` |
+| `cogview4` | CogView4 | `toolkit.models.cogview4.CogView4` |
+| `wan21` | Wan 2.1 T2V 1.3B/14B | `Wan21` |
+| `wan21_i2v` | Wan 2.1 I2V 14B 480P/720P | `Wan21I2V` |
+| `wan21_vace` | Wan 2.1 VACE 1.3B/14B, VACE Outpaint | `WanVACEModel` |
+| `wan22_14b` | Wan 2.2 T2V 14B | `Wan2214bModel` |
+| `wan22_14b_i2v` | Wan 2.2 I2V 14B | `Wan2214bI2VModel` |
+| `wan22_5b` | Wan 2.2 TI2V 5B | `Wan225bModel` |
+| `ltx2` | LTX-2 | `LTX2Model` |
+| `ltx2.3` | LTX-2.3, LTX-2.3 IC / V2V, LTX-2.3 IC / Image Edit | `LTX23Model` |
+| `ace_step_15` | ACE-Step 1.5 | `AceStep15Model` |
+| `ace_step_15_xl` | ACE-Step 1.5 XL | `AceStep15XLModel` |
+
+Older built-in Stable Diffusion paths also still support legacy arches such as `sd2`, `sd3`, `ssd`, `vega`, `pixart`, `pixart_sigma`, and `auraflow` when corresponding model configs are supplied.
+
+## UI Preset Aliases
+
+The UI uses these suffixed names for presets that share a backend arch:
+
+| UI preset name | Backend arch after `ModelConfig` normalization |
+|----------------|-----------------------------------------------|
+| `qwen_image:2512` | `qwen_image` |
+| `qwen_image_edit_plus:2511` | `qwen_image_edit_plus` |
+| `wan21:1b` | `wan21` |
+| `wan21:14b` | `wan21` |
+| `wan21_i2v:14b480p` | `wan21_i2v` |
+| `wan21_i2v:14b` | `wan21_i2v` |
+| `wan21_vace:1.3b` | `wan21_vace` |
+| `wan21_vace:14b` | `wan21_vace` |
+| `wan21_vace:14b-outpaint` | `wan21_vace` |
+| `wan22_14b:t2v` | `wan22_14b` |
+| `zimage:turbo` | `zimage` |
+| `zimage:turbo-outpaint-controlnet` | `zimage` |
+| `zimage:deturbo` | `zimage` |
+| `ltx2.3:ic_v2v` | `ltx2.3` |
+| `ltx2.3:ic_image_edit` | `ltx2.3` |
 
 ## Image Models
 
-### FLUX.1 (by Black Forest Labs)
+| Model | Default path in UI/config examples | Notes |
+|-------|------------------------------------|-------|
+| FLUX.1 | `black-forest-labs/FLUX.1-dev` | Flow matching, transformer-only LoRA by default |
+| FLUX.1-schnell | `black-forest-labs/FLUX.1-schnell` | Distilled; examples use an assistant/training adapter |
+| FLUX.1-Kontext-dev | `black-forest-labs/FLUX.1-Kontext-dev` | Instruction/editing preset with control image support |
+| FLUX.2 | `black-forest-labs/FLUX.2-dev` | Uses `match_target_res` model kwargs in UI presets |
+| FLUX.2-klein-base-4B | `black-forest-labs/FLUX.2-klein-base-4B` | Smaller FLUX.2 preset |
+| FLUX.2-klein-base-9B | `black-forest-labs/FLUX.2-klein-base-9B` | Larger klein preset |
+| Flex.1 | `ostris/Flex.1-alpha` | Uses `arch: flex1`, migrated internally to `flux` |
+| Flex.2 | `ostris/Flex.2-preview` | Depth, line, pose, and inpaint controls |
+| SDXL | `stabilityai/stable-diffusion-xl-base-1.0` | DDPM-style scheduler presets |
+| SD 1.5 | `stable-diffusion-v1-5/stable-diffusion-v1-5` | 512px baseline |
+| Lumina2 | `Alpha-VLLM/Lumina-Image-2.0` | Flow matching |
+| Chroma | `lodestones/Chroma1-Base` | Flow matching |
+| Zeta Chroma | `lodestones/Zeta-Chroma/zeta-chroma-base-x0-pixel-dino-distance.safetensors` | Uses `extras_name_or_path: Tongyi-MAI/Z-Image-Turbo` |
+| OmniGen2 | `OmniGen2/OmniGen2` | Multimodal image model |
+| Nucleus-Image | `NucleusAI/Nucleus-Image` | MoE-like layer exclusions in UI defaults |
+| ERNIE-Image | `baidu/ERNIE-Image` | Registered custom model |
+| F-Lite | model path supplied by config | Registered custom model |
+| CogView4 | model path supplied by config | Core model class exists outside the UI preset list |
 
-| Model | HuggingFace ID | VRAM | Notes |
-|-------|----------------|------|-------|
-| FLUX.1-dev | `black-forest-labs/FLUX.1-dev` | ~24GB (quantized) | Best quality |
-| FLUX.1-schnell | `black-forest-labs/FLUX.1-schnell` | ~24GB (quantized) | Faster, requires training adapter |
-| FLUX.2-dev | `black-forest-labs/FLUX.2-dev` | ~24GB | Newer version |
-| FLUX.2-klein-4B | `black-forest-labs/FLUX.2-klein-base-4B` | ~16GB | Smaller variant |
-| FLUX.2-klein-9B | `black-forest-labs/FLUX.2-klein-base-9B` | ~20GB | Medium variant |
+## Instruction And Edit Models
 
-**Configuration:**
-```yaml
-model:
-  name_or_path: "black-forest-labs/FLUX.1-dev"
-  arch: "flux"
-  quantize: true
-  quantize_te: true
-train:
-  noise_scheduler: "flowmatch"
-  dtype: bf16
-  timestep_type: "sigmoid"
-sample:
-  sampler: "flowmatch"
-  guidance_scale: 4
-```
-
-**Special Notes:**
-- FLUX.1-schnell requires `assistant_lora_path` for training
-- Does not support conv layers in LoRA
-- Guidance scale typically 3.5-4.5
-
----
-
-### Flex.1 / Flex.2 (by Ostris)
-
-| Model | HuggingFace ID | VRAM | Notes |
-|-------|----------------|------|-------|
-| Flex.1-alpha | `ostris/Flex.1-alpha` | ~24GB (quantized) | Guidance-free variant |
-| Flex.2-preview | `ostris/Flex.2-preview` | ~24GB (quantized) | With controls |
-
-**Configuration:**
-```yaml
-model:
-  name_or_path: "ostris/Flex.1-alpha"
-  arch: "flex1"
-  quantize: true
-train:
-  bypass_guidance_embedding: true
-  noise_scheduler: "flowmatch"
-```
-
-**Flex.2 Controls:**
-Supports depth, line, pose, and inpaint:
-```yaml
-model:
-  name_or_path: "ostris/Flex.2-preview"
-  arch: "flex2"
-  model_kwargs:
-    invert_inpaint_mask_chance: 0.2
-    inpaint_dropout: 0.5
-    control_dropout: 0.5
-```
-
----
-
-### Stable Diffusion XL
-
-| Model | HuggingFace ID | VRAM | Notes |
-|-------|----------------|------|-------|
-| SDXL Base | `stabilityai/stable-diffusion-xl-base-1.0` | ~16GB | Standard SDXL |
-| SDXL Turbo | `stabilityai/sdxl-turbo` | ~16GB | Distilled |
-
-**Configuration:**
-```yaml
-model:
-  name_or_path: "stabilityai/stable-diffusion-xl-base-1.0"
-  arch: "sdxl"
-train:
-  noise_scheduler: "ddpm"
-  dtype: fp16
-sample:
-  sampler: "ddpm"
-  guidance_scale: 7
-```
-
-**Special Notes:**
-- Supports conv layers in LoRA
-- Use DDPM noise scheduler (not flowmatch)
-
----
-
-### Stable Diffusion 1.5
-
-| Model | HuggingFace ID | VRAM | Notes |
-|-------|----------------|------|-------|
-| SD 1.5 | `stable-diffusion-v1-5/stable-diffusion-v1-5` | ~8GB | Classic SD |
-
-**Configuration:**
-```yaml
-model:
-  name_or_path: "stable-diffusion-v1-5/stable-diffusion-v1-5"
-  arch: "sd1"
-train:
-  noise_scheduler: "ddpm"
-sample:
-  width: 512
-  height: 512
-  guidance_scale: 7
-```
-
----
-
-### Lumina2
-
-| Model | HuggingFace ID | VRAM | Notes |
-|-------|----------------|------|-------|
-| Lumina Image 2.0 | `Alpha-VLLM/Lumina-Image-2.0` | ~24GB | |
-
-**Configuration:**
-```yaml
-model:
-  name_or_path: "Alpha-VLLM/Lumina-Image-2.0"
-  arch: "lumina2"
-  quantize_te: true
-train:
-  noise_scheduler: "flowmatch"
-```
-
----
-
-### HiDream
-
-| Model | HuggingFace ID | VRAM | Notes |
-|-------|----------------|------|-------|
-| HiDream I1 Full | `HiDream-ai/HiDream-I1-Full` | ~24GB | MoE architecture |
-| HiDream E1 | `HiDream-ai/HiDream-E1-1` | ~24GB | Edit model |
-
-**Configuration:**
-```yaml
-model:
-  name_or_path: "HiDream-ai/HiDream-I1-Full"
-  arch: "hidream"
-  quantize: true
-train:
-  lr: 0.0002
-  timestep_type: "shift"
-network:
-  network_kwargs:
-    ignore_if_contains:
-      - "ff_i.experts"
-      - "ff_i.gate"
-```
-
-**Special Notes:**
-- Has MoE (Mixture of Experts) layers
-- Ignore expert layers for faster training
-- Higher learning rate recommended
-
----
-
-### Qwen-Image / Qwen-Image-Edit
-
-| Model | HuggingFace ID | VRAM | Notes |
-|-------|----------------|------|-------|
-| Qwen-Image | `Qwen/Qwen-Image` | ~24GB | Text-to-image |
-| Qwen-Image-2512 | `Qwen/Qwen-Image-2512` | ~24GB | Higher res |
-| Qwen-Image-Edit | `Qwen/Qwen-Image-Edit` | ~24GB | Image editing |
-| Qwen-Image-Edit-2509 | `Qwen/Qwen-Image-Edit-2509` | ~24GB | Updated edit |
-| Qwen-Image-Edit-2511 | `Qwen/Qwen-Image-Edit-2511` | ~24GB | Latest edit |
-
-**Configuration:**
-```yaml
-model:
-  name_or_path: "Qwen/Qwen-Image"
-  arch: "qwen_image"
-  quantize: true
-  quantize_te: true
-  low_vram: true
-train:
-  timestep_type: "weighted"
-```
-
-**Available ARAs (Accuracy Recovery Adapters):**
-- 3-bit with ARA for most variants
-
----
-
-### Z-Image (by Tongyi-MAI)
-
-| Model | HuggingFace ID | VRAM | Notes |
-|-------|----------------|------|-------|
-| Z-Image | `Tongyi-MAI/Z-Image` | ~24GB | Full model |
-| Z-Image Turbo | `Tongyi-MAI/Z-Image-Turbo` | ~24GB | Distilled |
-| Z-Image De-Turbo | `ostris/Z-Image-De-Turbo` | ~24GB | De-distilled |
-
-**Z-Image Turbo (with training adapter):**
-```yaml
-model:
-  name_or_path: "Tongyi-MAI/Z-Image-Turbo"
-  assistant_lora_path: "ostris/zimage_turbo_training_adapter/zimage_turbo_training_adapter_v2.safetensors"
-sample:
-  guidance_scale: 1
-  sample_steps: 8
-```
-
----
-
-### Chroma
-
-| Model | HuggingFace ID | VRAM | Notes |
-|-------|----------------|------|-------|
-| Chroma1-Base | `lodestones/Chroma1-Base` | ~24GB | |
-
-**Configuration:**
-```yaml
-model:
-  name_or_path: "lodestones/Chroma1-Base"
-  arch: "chroma"
-  quantize: true
-```
-
----
-
-### OmniGen2
-
-| Model | HuggingFace ID | VRAM | Notes |
-|-------|----------------|------|-------|
-| OmniGen2 | `OmniGen2/OmniGen2` | ~24GB | Multi-modal |
-
-**Configuration:**
-```yaml
-model:
-  name_or_path: "OmniGen2/OmniGen2"
-  arch: "omnigen2"
-  quantize_te: true
-```
-
----
+| Model | Default path | Notes |
+|-------|--------------|-------|
+| Qwen-Image | `Qwen/Qwen-Image` | T2I preset |
+| Qwen-Image-2512 | `Qwen/Qwen-Image-2512` | Same backend arch with UI suffix |
+| Qwen-Image-Edit | `Qwen/Qwen-Image-Edit` | Single control image edit preset |
+| Qwen-Image-Edit-2509 | `Qwen/Qwen-Image-Edit-2509` | Multi-control edit preset |
+| Qwen-Image-Edit-2511 | `Qwen/Qwen-Image-Edit-2511` | Multi-control edit preset |
+| HiDream | `HiDream-ai/HiDream-I1-Full` | UI excludes expert/gate layers by default |
+| HiDream E1 | `HiDream-ai/HiDream-E1-1` | Edit/instruction preset |
+| HiDream-O1 | `HiDream-ai/HiDream-O1-Image` | Uses Qwen3-VL components and large sample defaults |
+| Wan 2.1 VACE | `Wan-AI/Wan2.1-VACE-1.3B-diffusers` or `Wan-AI/Wan2.1-VACE-14B-diffusers` | Edit, reference, video, and outpaint conditioning |
 
 ## Video Models
 
-### Wan 2.1 / Wan 2.2
+| Model | Default path | Notes |
+|-------|--------------|-------|
+| Wan 2.1 T2V 1.3B | `Wan-AI/Wan2.1-T2V-1.3B-Diffusers` | T2V preset |
+| Wan 2.1 T2V 14B | `Wan-AI/Wan2.1-T2V-14B-Diffusers` | T2V preset |
+| Wan 2.1 I2V 14B 480P | `Wan-AI/Wan2.1-I2V-14B-480P-Diffusers` | I2V preset |
+| Wan 2.1 I2V 14B 720P | `Wan-AI/Wan2.1-I2V-14B-720P-Diffusers` | I2V preset |
+| Wan 2.2 T2V 14B | `ai-toolkit/Wan2.2-T2V-A14B-Diffusers-bf16` | Multistage high/low-noise training flags |
+| Wan 2.2 I2V 14B | `ai-toolkit/Wan2.2-I2V-A14B-Diffusers-bf16` | I2V multistage preset |
+| Wan 2.2 TI2V 5B | `Wan-AI/Wan2.2-TI2V-5B-Diffusers` | TI2V, 121-frame UI default |
+| LTX-2 | `Lightricks/LTX-2` | Video and audio-aware dataset options |
+| LTX-2.3 | `Lightricks/LTX-2.3/ltx-2.3-22b-dev.safetensors` | Video/audio preset |
+| LTX-2.3 IC / V2V | `Lightricks/LTX-2.3/ltx-2.3-22b-dev.safetensors` | Reference-frame IC/V2V LoRA preset |
+| LTX-2.3 IC / Image Edit | `Lightricks/LTX-2.3/ltx-2.3-22b-dev.safetensors` | Image edit preset using the LTX-2.3 backend |
 
-| Model | HuggingFace ID | VRAM | Notes |
-|-------|----------------|------|-------|
-| Wan 2.1 T2V 1.3B | `Wan-AI/Wan2.1-T2V-1.3B-Diffusers` | ~16GB | Smaller |
-| Wan 2.1 T2V 14B | `Wan-AI/Wan2.1-T2V-14B-Diffusers` | ~24GB | Full T2V |
-| Wan 2.1 I2V 14B 480P | `Wan-AI/Wan2.1-I2V-14B-480P-Diffusers` | ~24GB | I2V 480p |
-| Wan 2.1 I2V 14B 720P | `Wan-AI/Wan2.1-I2V-14B-720P-Diffusers` | ~24GB | I2V 720p |
-| Wan 2.2 T2V 14B | `ai-toolkit/Wan2.2-T2V-A14B-Diffusers-bf16` | ~24GB | Updated |
-| Wan 2.2 I2V 14B | `ai-toolkit/Wan2.2-I2V-A14B-Diffusers-bf16` | ~24GB | Updated I2V |
-| Wan 2.2 TI2V 5B | `Wan-AI/Wan2.2-TI2V-5B-Diffusers` | ~20GB | Smaller TI2V |
+## Audio Models
 
-**Configuration (T2V):**
+| Model | Default path | Notes |
+|-------|--------------|-------|
+| ACE-Step 1.5 | `ostris/ace_step_1.5_ComfyUI_files/ace_step_1.5_base_aio.safetensors` | Audio sample fields include caption, lyrics, BPM, key, time signature, duration, and language |
+| ACE-Step 1.5 XL | `ostris/ace_step_1.5_ComfyUI_files/ace_step_1.5_xl_base_aio.safetensors` | Larger ACE-Step preset |
+
+## Common Model Settings
+
+Most current image/video/audio UI presets use:
+
 ```yaml
 model:
-  name_or_path: "Wan-AI/Wan2.1-T2V-14B-Diffusers"
-  arch: "wan21"
   quantize: true
   quantize_te: true
-  low_vram: true
+  qtype: qfloat8
+  qtype_te: qfloat8
+  low_vram: false
 train:
-  unload_text_encoder: true
-datasets:
-  - folder_path: "/path/to/videos"
-    num_frames: 41
+  noise_scheduler: flowmatch
+  dtype: bf16
 sample:
-  num_frames: 40
-  fps: 15
+  sampler: flowmatch
 ```
 
-**Configuration (I2V):**
-```yaml
-model:
-  name_or_path: "Wan-AI/Wan2.1-I2V-14B-720P-Diffusers"
-  arch: "wan21_i2v"
-train:
-  timestep_type: "weighted"
-datasets:
-  - folder_path: "/path/to/videos"
-    do_i2v: true
-```
+Quantization options exposed by the UI are `qfloat8`, `uint7`, `uint6`, `uint5`, `uint4`, `uint3`, and `uint2`. An Accuracy Recovery Adapter can be embedded in `qtype` as `uint4|org/repo/path.safetensors`; `ModelConfig` splits that into `qtype` and `accuracy_recovery_adapter`.
 
-**Wan 2.2 Multistage:**
-```yaml
-model:
-  model_kwargs:
-    train_high_noise: true
-    train_low_noise: true
-train:
-  timestep_type: "linear"
-```
-
----
-
-### LTX-2
-
-| Model | HuggingFace ID | VRAM | Notes |
-|-------|----------------|------|-------|
-| LTX-2 | `Lightricks/LTX-2` | ~24GB | Fast video |
-
-**Configuration:**
-```yaml
-model:
-  name_or_path: "Lightricks/LTX-2"
-  arch: "ltx2"
-  quantize: true
-  low_vram: true
-datasets:
-  - folder_path: "/path/to/videos"
-    do_audio: true      # Supports audio
-    do_i2v: false
-    fps: 24
-sample:
-  num_frames: 121
-  fps: 24
-  width: 768
-  height: 768
-```
-
-**Special Notes:**
-- Supports audio conditioning
-- Fast inference
-
----
-
-## Instruction-Following Models
-
-### FLUX.1-Kontext
-
-| Model | HuggingFace ID | VRAM | Notes |
-|-------|----------------|------|-------|
-| FLUX.1-Kontext-dev | `black-forest-labs/FLUX.1-Kontext-dev` | ~24GB | Image editing |
-
-**Configuration:**
-```yaml
-model:
-  name_or_path: "black-forest-labs/FLUX.1-Kontext-dev"
-  arch: "flux_kontext"
-  quantize: true
-train:
-  timestep_type: "weighted"
-datasets:
-  - folder_path: "/path/to/pairs"
-    control_path: "/path/to/source_images"
-```
-
----
-
-## Quantization Options
-
-All models support various quantization levels:
-
-| Option | Size Reduction | Quality Impact |
-|--------|---------------|----------------|
-| `qfloat8` | ~50% | Minimal |
-| `uint7` | ~56% | Low |
-| `uint6` | ~63% | Low-Medium |
-| `uint5` | ~69% | Medium |
-| `uint4` | ~75% | Medium-High |
-| `uint3` | ~81% | High |
-
-**With Accuracy Recovery Adapter (ARA):**
-```yaml
-model:
-  qtype: "uint4|ostris/accuracy_recovery_adapters/model_ara.safetensors"
-```
-
----
-
-## Memory Requirements Summary
-
-| Model Category | Min VRAM (Quantized) | Recommended |
-|---------------|---------------------|-------------|
-| SD 1.5 | 6GB | 8GB |
-| SDXL | 12GB | 16GB |
-| FLUX.1 | 18GB | 24GB |
-| Wan 14B | 20GB | 24GB+ |
-| Video models | 20GB | 24GB+ |
-
-**Memory reduction strategies:**
-- `quantize: true` - ~50% reduction
-- `low_vram: true` - Peak VRAM reduction
-- `layer_offloading: true` - Dynamic offloading
-- `cache_latents_to_disk: true` - VAE not needed during training
-- `unload_text_encoder: true` - For 24GB with large models
+Memory reduction options are `quantize`, `quantize_te`, `low_vram`, `layer_offloading`, `layer_offloading_transformer_percent`, `layer_offloading_text_encoder_percent`, `cache_latents_to_disk`, and `unload_text_encoder`.

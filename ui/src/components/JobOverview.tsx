@@ -10,10 +10,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import useJobLog from '@/hooks/useJobLog';
 import SampleImageViewer from './SampleImageViewer';
+import JobLossGraph from './JobLossGraph';
 import { JobConfig } from '@/types';
 import { openConfirm } from './ConfirmModal';
 import { apiClient } from '@/utils/api';
-import { getFoldername } from '@/utils/basic';
+import { getFoldername, isAudio, isVideo } from '@/utils/basic';
 import { openMergeLoRAsModal } from './MergeLoRAsModal';
 
 interface JobOverviewProps {
@@ -126,73 +127,6 @@ function Panel({
       </div>
       <div className={`min-h-0 flex-1 ${bodyClassName}`}>{children}</div>
     </section>
-  );
-}
-
-function LossPreview({
-  series,
-  lossKeys,
-  status,
-}: {
-  series: Record<string, LossPoint[]>;
-  lossKeys: string[];
-  status: string;
-}) {
-  const points = useMemo(() => {
-    const primaryKey = lossKeys[0] ?? 'loss';
-    const raw = (series[primaryKey] ?? []).filter(p => p.value != null && Number.isFinite(p.value));
-    return raw.slice(-120);
-  }, [series, lossKeys]);
-
-  const latest = getLatestLossPoint(series, lossKeys);
-
-  const path = useMemo(() => {
-    if (points.length < 2) return '';
-    const values = points.map(p => p.value as number);
-    const min = Math.min(...values);
-    const max = Math.max(...values);
-    const range = max - min || 1;
-    return points
-      .map((point, idx) => {
-        const x = (idx / (points.length - 1)) * 100;
-        const y = 100 - (((point.value as number) - min) / range) * 86 - 7;
-        return `${idx === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${y.toFixed(2)}`;
-      })
-      .join(' ');
-  }, [points]);
-
-  return (
-    <div className="h-full min-h-0 p-3">
-      <div className="bg-gray-950 border border-gray-800 rounded-md relative h-full min-h-[190px] overflow-hidden">
-        {points.length < 2 ? (
-          <div className="absolute inset-0 flex items-center justify-center text-sm text-gray-400">
-            {status === 'error' ? 'Failed to load loss.' : 'Waiting for loss points...'}
-          </div>
-        ) : (
-          <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 h-full w-full">
-            <path
-              d="M0 25H100 M0 50H100 M0 75H100 M25 0V100 M50 0V100 M75 0V100"
-              stroke="rgba(255,255,255,.06)"
-              strokeWidth="0.5"
-            />
-            <path
-              d={path}
-              fill="none"
-              stroke="rgba(96,165,250,1)"
-              strokeWidth="2.4"
-              vectorEffect="non-scaling-stroke"
-            />
-          </svg>
-        )}
-
-        {latest && (
-          <div className="absolute left-2 top-2 rounded-md border border-gray-800 bg-gray-950/85 px-2 py-1 text-xs text-gray-300">
-            <span className="text-gray-500">loss</span> {latest.value?.toPrecision(4)}{' '}
-            <span className="text-gray-500">step</span> {latest.step}
-          </div>
-        )}
-      </div>
-    </div>
   );
 }
 
@@ -361,7 +295,7 @@ export default function JobOverview({ job }: JobOverviewProps) {
         />
       </div>
 
-      <div className="grid min-h-0 flex-[0_0_46%] grid-cols-1 gap-3 xl:grid-cols-[minmax(0,2.15fr)_minmax(340px,1fr)]">
+      <div className="grid min-h-0 flex-[0_0_46%] grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.6fr)_minmax(320px,1fr)_minmax(260px,0.75fr)]">
         <Panel
           title="Samples"
           icon={<ImageIcon className="w-4 h-4 text-blue-400" />}
@@ -373,7 +307,7 @@ export default function JobOverview({ job }: JobOverviewProps) {
               {sampleStatus === 'error' ? 'Error loading samples.' : 'Waiting for samples...'}
             </div>
           ) : (
-            <div className="grid h-full min-h-[210px] grid-cols-2 gap-2 lg:grid-cols-4">
+            <div className="grid h-full min-h-0 grid-cols-2 gap-2 lg:grid-cols-4">
               {latestSamples.map((sample, idx) => (
                 <button
                   key={sample}
@@ -382,12 +316,32 @@ export default function JobOverview({ job }: JobOverviewProps) {
                   className="group min-h-0 text-left"
                 >
                   <div className="h-full min-h-0 overflow-hidden rounded-md border border-gray-800 bg-gray-950">
-                    <img
-                      src={`/api/img/${encodeURIComponent(sample)}`}
-                      alt={`Sample ${idx + 1}`}
-                      className="h-full w-full object-cover transition-opacity group-hover:opacity-85"
-                      loading="lazy"
-                    />
+                    {isVideo(sample) ? (
+                      <video
+                        src={`/api/img/${encodeURIComponent(sample)}`}
+                        className="h-full w-full object-cover transition-opacity group-hover:opacity-85"
+                        preload="metadata"
+                        playsInline
+                        muted
+                        loop
+                        autoPlay
+                        controls={false}
+                      />
+                    ) : isAudio(sample) ? (
+                      <img
+                        src={`/api/audio/art/${encodeURIComponent(sample)}`}
+                        alt={`Sample ${idx + 1}`}
+                        className="h-full w-full object-cover transition-opacity group-hover:opacity-85"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <img
+                        src={`/api/img/${encodeURIComponent(sample)}`}
+                        alt={`Sample ${idx + 1}`}
+                        className="h-full w-full object-cover transition-opacity group-hover:opacity-85"
+                        loading="lazy"
+                      />
+                    )}
                   </div>
                 </button>
               ))}
@@ -395,73 +349,71 @@ export default function JobOverview({ job }: JobOverviewProps) {
           )}
         </Panel>
 
-        <div className="grid min-h-0 grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-1 xl:grid-rows-[minmax(0,1fr)_auto]">
-          <Panel title="Loss Graph" icon={<Activity className="w-4 h-4 text-emerald-400" />} bodyClassName="min-h-0">
-            <LossPreview series={lossSeries} lossKeys={lossKeys} status={lossStatus} />
-          </Panel>
+        <Panel title="Loss Graph" icon={<Activity className="w-4 h-4 text-emerald-400" />} bodyClassName="min-h-0">
+          <JobLossGraph job={job} embedded />
+        </Panel>
 
-          <Panel
-            title="Checkpoints"
-            icon={<Brain className="w-4 h-4 text-purple-400" />}
-            right={
-              files.length ? (
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleMergeFiles}
-                    className="rounded-md bg-purple-500/10 px-2 py-1 text-[11px] uppercase text-purple-400 hover:bg-purple-500/20"
-                  >
-                    merge
-                  </button>
-                  <span>{files.length}</span>
-                </div>
-              ) : undefined
-            }
-            bodyClassName="p-2 overflow-y-auto"
-          >
-            {jobType === 'train' && files.length > 0 && (
-              <div className="space-y-1 text-xs">
-                {files.slice(0, 6).map(file => {
-                  const fileName = getCheckpointName(file.path) || getFileName(file.path);
-                  return (
-                    <div
-                      key={file.path}
-                      className="flex items-center justify-between gap-3 rounded-md border border-gray-800 bg-gray-950 px-2 py-1.5 hover:bg-gray-800"
-                    >
-                      <a
-                        href={`/api/files/${encodeURIComponent(file.path)}`}
-                        target="_blank"
-                        className="min-w-0 flex-1 truncate text-gray-200"
-                      >
-                        {fileName}
-                      </a>
-                      <span className="flex-shrink-0 text-gray-400">{cleanSize(file.size)}</span>
-                      <a
-                        href={`/api/files/${encodeURIComponent(file.path)}`}
-                        target="_blank"
-                        className="flex-shrink-0 rounded p-1 text-purple-400 hover:bg-purple-500/10"
-                        title="Download checkpoint"
-                      >
-                        <Download className="h-3 w-3" />
-                      </a>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteFile(file.path)}
-                        className="flex-shrink-0 rounded p-1 text-red-500 hover:bg-red-500/10"
-                        title="Delete checkpoint"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                    </div>
-                  );
-                })}
+        <Panel
+          title="Checkpoints"
+          icon={<Brain className="w-4 h-4 text-purple-400" />}
+          right={
+            files.length ? (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleMergeFiles}
+                  className="rounded-md bg-purple-500/10 px-2 py-1 text-[11px] uppercase text-purple-400 hover:bg-purple-500/20"
+                >
+                  merge
+                </button>
+                <span>{files.length}</span>
               </div>
-            )}
-            {(!jobType || files.length === 0) && (
-              <div className="flex min-h-20 items-center justify-center text-sm text-gray-400">No checkpoints yet</div>
-            )}
-          </Panel>
-        </div>
+            ) : undefined
+          }
+          bodyClassName="p-2 overflow-y-auto"
+        >
+          {jobType === 'train' && files.length > 0 && (
+            <div className="space-y-1 text-xs">
+              {files.slice(0, 6).map(file => {
+                const fileName = getCheckpointName(file.path) || getFileName(file.path);
+                return (
+                  <div
+                    key={file.path}
+                    className="flex items-center justify-between gap-3 rounded-md border border-gray-800 bg-gray-950 px-2 py-1.5 hover:bg-gray-800"
+                  >
+                    <a
+                      href={`/api/files/${encodeURIComponent(file.path)}`}
+                      target="_blank"
+                      className="min-w-0 flex-1 truncate text-gray-200"
+                    >
+                      {fileName}
+                    </a>
+                    <span className="flex-shrink-0 text-gray-400">{cleanSize(file.size)}</span>
+                    <a
+                      href={`/api/files/${encodeURIComponent(file.path)}`}
+                      target="_blank"
+                      className="flex-shrink-0 rounded p-1 text-purple-400 hover:bg-purple-500/10"
+                      title="Download checkpoint"
+                    >
+                      <Download className="h-3 w-3" />
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteFile(file.path)}
+                      className="flex-shrink-0 rounded p-1 text-red-500 hover:bg-red-500/10"
+                      title="Delete checkpoint"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {(!jobType || files.length === 0) && (
+            <div className="flex min-h-20 items-center justify-center text-sm text-gray-400">No checkpoints yet</div>
+          )}
+        </Panel>
       </div>
 
       <Panel

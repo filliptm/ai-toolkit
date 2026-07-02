@@ -72,22 +72,21 @@ export default function FilesWidget({
           <span className="px-2 py-0.5 bg-gray-700 rounded-full text-xs text-gray-300">{files.length}</span>
         </div>
         {files.length > 0 && (
-          <span
-            className="px-3 py-1 rounded-full text-sm bg-purple-500/10 text-purple-500 uppercase cursor-pointer hover:bg-purple-500/20"
+          <button
+            type="button"
+            className="rounded-full bg-purple-500/10 px-3 py-1 text-xs uppercase text-purple-300 hover:bg-purple-500/20"
             onClick={() => {
               const outputName = `${jobName || 'checkpoint'}_merged`;
               openMergeLoRAsModal(
                 getFoldername(files[0].path),
                 outputName,
-                files.map(f => ({ path: f.path })),
-                () => {
-                  refreshFiles();
-                },
+                files.map(file => ({ path: file.path })),
+                refreshFiles,
               );
             }}
           >
-            merge
-          </span>
+            Merge
+          </button>
         )}
       </div>
 

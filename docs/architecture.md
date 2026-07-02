@@ -1,355 +1,181 @@
 # Architecture Overview
 
-This document describes the internal architecture of AI-Toolkit, explaining how components interact to enable flexible diffusion model training.
+AI-Toolkit has two runtime surfaces:
 
-## High-Level Architecture
+- A Python CLI (`run.py`) that loads YAML/JSON configs and dispatches jobs.
+- A Next.js UI (`ui/`) that stores jobs/settings in SQLite and launches the same Python CLI through a queue worker.
 
+## Runtime Flow
+
+```text
+Config file or UI job JSON
+        |
+        v
+run.py
+        |
+        v
+toolkit/job.py:get_job()
+        |
+        +-- job: extract   -> jobs/ExtractJob.py
+        +-- job: train     -> jobs/TrainJob.py
+        +-- job: mod       -> jobs/ModJob.py
+        +-- job: generate  -> jobs/GenerateJob.py
+        `-- job: extension -> jobs/ExtensionJob.py
+                                |
+                                v
+                       toolkit/extension.py
+                       scans extensions/ and extensions_built_in/
+                                |
+                                v
+                       Process class selected by config.process[].type
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                        run.py (Entry Point)                       │
-│  - Parses command line arguments                                  │
-│  - Loads config files                                             │
-│  - Dispatches to appropriate Job type                             │
-└───────────────────────────────┬──────────────────────────────────┘
-                                │
-                                ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                      toolkit/job.py                               │
-│  get_job() - Factory function that creates job instances          │
-│  - extract → ExtractJob                                           │
-│  - train → TrainJob                                               │
-│  - mod → ModJob                                                   │
-│  - generate → GenerateJob                                         │
-│  - extension → ExtensionJob (most common)                         │
-└───────────────────────────────┬──────────────────────────────────┘
-                                │
-                                ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                      jobs/BaseJob.py                              │
-│  Base class for all jobs:                                         │
-│  - Loads configuration                                            │
-│  - Manages process list                                           │
-│  - Executes run() and cleanup()                                   │
-└───────────────────────────────┬──────────────────────────────────┘
-                                │
-                                ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                   jobs/ExtensionJob.py                            │
-│  Loads processes from extensions:                                 │
-│  - Scans extensions/ and extensions_built_in/                     │
-│  - Maps process types to Extension classes                        │
-│  - Instantiates appropriate Process class                         │
-└───────────────────────────────┬──────────────────────────────────┘
-                                │
-                                ▼
-┌──────────────────────────────────────────────────────────────────┐
-│              Process Classes (Training Logic)                     │
-│                                                                   │
-│  BaseProcess → BaseTrainProcess → BaseSDTrainProcess → SDTrainer  │
-│                                                                   │
-│  Each layer adds functionality:                                   │
-│  - BaseProcess: Config access, timing                             │
-│  - BaseTrainProcess: Tensorboard, checkpointing                   │
-│  - BaseSDTrainProcess: SD model loading, LoRA, sampling           │
-│  - SDTrainer: Actual training loop implementation                 │
-└───────────────────────────────┬──────────────────────────────────┘
-                                │
-                                ▼
-┌──────────────────────────────────────────────────────────────────┐
-│              StableDiffusion (Model Wrapper)                      │
-│  toolkit/stable_diffusion_model.py                                │
-│                                                                   │
-│  Unified interface for all model architectures:                   │
-│  - SD 1.5, SD 2.x, SDXL, SD3                                     │
-│  - FLUX.1, Flex.1/2, Chroma                                      │
-│  - PixArt, AuraFlow, Lumina2                                     │
-│  - Wan 2.1/2.2, LTX-2                                            │
-│  - HiDream, OmniGen2, Qwen-Image                                 │
-│                                                                   │
-│  Handles: model loading, encoding, noise scheduling, generation   │
-└──────────────────────────────────────────────────────────────────┘
-```
+
+`extension` is the normal path for current training configs. The UI default job uses `process[0].type: diffusion_trainer`.
 
 ## Core Components
 
-### 1. Configuration System (`toolkit/config.py`, `toolkit/config_modules.py`)
+| Area | Files | Responsibility |
+|------|-------|----------------|
+| CLI entry | `run.py` | Parses config paths, `--recover`, `--name`, and `--log`; runs jobs sequentially |
+| Config loading | `toolkit/config.py`, `toolkit/config_modules.py` | Reads YAML/JSON, resolves env vars/name tags, constructs typed config objects |
+| Job dispatch | `toolkit/job.py`, `jobs/*.py` | Selects job class from `job` and loads process classes |
+| Processes | `jobs/process/*`, `extensions_built_in/*` | Training, generation, extraction, modification, captioning, dataset tools, and custom workflows |
+| Model loading | `toolkit/stable_diffusion_model.py`, `toolkit/models/*`, `extensions_built_in/*/AI_TOOLKIT_MODELS` | Core SD-style loading plus custom model subclasses |
+| Data loading | `toolkit/data_loader.py`, `toolkit/dataloader_mixins.py` | Image/video/audio items, captions, buckets, masks, controls, references, cache behavior |
+| Optimization | `toolkit/optimizer.py`, `toolkit/optimizers/*` | Adam/AdamW, bitsandbytes 8-bit, Prodigy, Adafactor, Automagic, Automagic2 |
+| Saving | `toolkit/saving.py`, trainer classes | Safetensors/diffusers save formats, step checkpoints, hub push metadata |
+| UI | `ui/src`, `ui/cron`, `ui/prisma` | Job builder, queue, settings, monitoring, API routes |
 
-The configuration system is the backbone of AI-Toolkit:
+## Job Types
 
-```python
-# toolkit/config.py
-def get_config(config_file_path_or_dict, name=None):
-    """
-    Loads config from YAML/JSON file or dict.
-    Supports:
-    - Environment variable substitution: ${VAR_NAME}
-    - Name tag replacement: [name]
-    - Auto-extension detection (.yaml, .yml, .json)
-    """
+`toolkit/job.py` currently supports:
+
+| `job` | Job class | Process source |
+|-------|-----------|----------------|
+| `extension` | `ExtensionJob` | All registered extension UIDs |
+| `train` | `TrainJob` | Legacy built-in train processes such as `vae`, `slider`, `rescale_sd`, `esrgan` |
+| `extract` | `ExtractJob` | `lora`, `locon` extraction |
+| `mod` | `ModJob` | `rescale_lora` |
+| `generate` | `GenerateJob` | `to_folder` |
+
+`MergeJob` exists in `jobs/MergeJob.py`, but `toolkit/job.py` does not currently dispatch a `merge` job type.
+
+## Extension Discovery
+
+`toolkit/extension.py` scans:
+
+```text
+extensions/
+extensions_built_in/
 ```
 
-Configuration is parsed into typed dataclasses in `config_modules.py`:
+Each package can export `AI_TOOLKIT_EXTENSIONS`. `ExtensionJob` builds a dictionary where each extension `uid` maps to the process class returned by `get_process()`.
 
-| Config Class | Purpose |
-|-------------|---------|
-| `ModelConfig` | Model path, architecture, quantization settings |
-| `TrainConfig` | Learning rate, steps, optimizer, scheduler |
-| `NetworkConfig` | LoRA/LoKr rank, alpha, type |
-| `DatasetConfig` | Dataset paths, resolution, augmentations |
-| `SaveConfig` | Checkpoint frequency, format, dtype |
-| `SampleConfig` | Sampling prompts, dimensions, steps |
-| `AdapterConfig` | IP-Adapter, ControlNet, T2I adapter settings |
-| `EmbeddingConfig` | Textual inversion trigger and tokens |
+Current major built-in process groups:
 
-### 2. Extension System (`toolkit/extension.py`)
+- `sd_trainer`: `sd_trainer`, `textual_inversion_trainer`, `ui_trainer`, `diffusion_trainer`
+- `concept_slider`, `image_reference_slider_trainer`, `ultimate_slider_trainer`, `concept_replacer`
+- `dataset_tools`, `sync_from_collection`, `super_tagger`
+- `AceStepCaptioner`, `Qwen3VLCaptioner`
+- `reference_generator`, `pure_lora_generator`, `batch_img2img`
 
-Extensions provide pluggable training processes:
+## Process Hierarchy
 
-```python
-# Extension base class
-class Extension:
-    name: str = None    # Display name
-    uid: str = None     # Unique identifier (used in config)
-
-    @classmethod
-    def get_process(cls):
-        """Returns the Process class to use"""
-        pass
-```
-
-Extensions are discovered from two directories:
-- `extensions/` - User custom extensions
-- `extensions_built_in/` - Shipped extensions
-
-Each extension module must export `AI_TOOLKIT_EXTENSIONS` list:
-
-```python
-# extensions_built_in/sd_trainer/__init__.py
-AI_TOOLKIT_EXTENSIONS = [
-    SDTrainerExtension,      # uid: "sd_trainer"
-    UITrainerExtension,      # uid: "ui_trainer"
-    DiffusionTrainerExtension,  # uid: "diffusion_trainer"
-]
-```
-
-### 3. Process Hierarchy
-
-```
+```text
 BaseProcess
-    │
-    ├── get_conf() - Access nested config values
-    ├── run() - Abstract execution method
-    └── timer - Performance tracking
-
-BaseTrainProcess (extends BaseProcess)
-    │
-    ├── TensorBoard integration
-    ├── save_training_config()
-    └── training_folder management
-
-BaseSDTrainProcess (extends BaseTrainProcess)
-    │
-    ├── Model loading and management
-    ├── Network (LoRA/LoKr) setup
-    ├── Optimizer and scheduler creation
-    ├── Dataset loading
-    ├── Checkpoint save/load
-    ├── Sample generation
-    └── EMA (Exponential Moving Average)
-
-SDTrainer (extends BaseSDTrainProcess)
-    │
-    └── hook_train_loop() - The actual training step
-        ├── Get batch from dataloader
-        ├── Encode images to latents
-        ├── Add noise at timestep
-        ├── Get text embeddings
-        ├── Forward pass through UNet/Transformer
-        ├── Compute loss
-        ├── Backward pass
-        └── Optimizer step
+|-- BaseExtractProcess
+|-- BaseMergeProcess
+|-- BaseExtensionProcess
+`-- BaseTrainProcess
+    `-- BaseSDTrainProcess
+        `-- SDTrainer
+            |-- UITrainer
+            `-- DiffusionTrainer
 ```
 
-### 4. StableDiffusion Model Wrapper
+Specialized extension trainers can inherit from these classes or directly from `BaseExtensionProcess`.
 
-`toolkit/stable_diffusion_model.py` provides a unified interface across architectures:
+## Model Registry
 
-```python
-class StableDiffusion:
-    def __init__(self, device, model_config, dtype, ...):
-        self.arch: ModelArch  # 'sd1', 'sdxl', 'flux', etc.
-        self.vae: AutoencoderKL
-        self.unet: UNet2DConditionModel  # or Transformer
-        self.text_encoder: List[CLIPTextModel]
-        self.tokenizer: List[CLIPTokenizer]
-        self.noise_scheduler: DDPMScheduler
+AI-Toolkit has both legacy/core model loading and custom model packages.
 
-    def load_model(self):
-        """Load all model components based on arch"""
+Custom model discovery is handled by `toolkit/util/get_model.py`, which scans `extensions/` and `extensions_built_in/` for `AI_TOOLKIT_MODELS`. Current shipped model packages include:
 
-    def encode_prompt(self, prompt, ...):
-        """Encode text to embeddings"""
+- `extensions_built_in/diffusion_models`
+- `extensions_built_in/audio_models`
+- `extensions_built_in/flex2`
 
-    def encode_images(self, images):
-        """Encode images to latent space via VAE"""
+The current custom registry includes Chroma, Zeta Chroma, HiDream, HiDream E1/O1, F-Lite, OmniGen2, FLUX Kontext, Wan 2.2, Wan VACE, Qwen-Image variants, FLUX.2 variants, Z-Image, LTX-2/LTX-2.3, ERNIE-Image, Nucleus-Image, ACE-Step, and Flex.2. See [Supported Models](./models.md) for architecture IDs.
 
-    def decode_latents(self, latents):
-        """Decode latents to images via VAE"""
+## Training Data Flow
 
-    def generate_images(self, config_list):
-        """Full inference pipeline for sampling"""
+```text
+DatasetConfig
+    |
+    v
+AiToolkitDataset / data loader mixins
+    |
+    +-- image/video/audio paths
+    +-- captions and trigger handling
+    +-- masks, control images, reference images
+    +-- buckets, repeats, augmentations, latent/text caches
+    |
+    v
+BaseSDTrainProcess / SDTrainer
+    |
+    +-- encode latents/text/audio/reference inputs as needed
+    +-- sample timesteps/noise
+    +-- apply LoRA/adapter/model-specific behavior
+    +-- compute configured loss
+    +-- optimizer step and scheduler update
+    |
+    v
+checkpoint, samples, logs, UI progress
 ```
 
-### 5. Data Loading System (`toolkit/data_loader.py`)
+## UI Architecture
 
-The data loading system uses mixins for modularity:
+The UI stack is:
 
-```python
-class AiToolkitDataset(
-    Dataset,
-    CaptionMixin,           # Caption loading and processing
-    BucketsMixin,           # Aspect ratio bucketing
-    LatentCachingMixin,     # Cache encoded latents to disk
-    CLIPCachingMixin,       # Cache CLIP embeddings
-    ControlCachingMixin,    # Cache control images
-    TextEmbeddingCachingMixin  # Cache text encoder outputs
-):
-    """Main dataset class combining all capabilities"""
+- Next.js 15 with App Router
+- React 19
+- TypeScript
+- Tailwind CSS
+- Prisma 6 with SQLite
+- A Node queue worker in `ui/cron/worker.ts`
+
+The worker launches `python run.py <job_config> --log <log_path>` with a detached process. It writes `.job_config.json`, rotates `log.txt`, stores the PID in SQLite and `pid.txt`, and sets UI-specific environment variables.
+
+## Outputs
+
+Training output is written under the process `training_folder` and job name, commonly `output/<name>/`. Typical files include:
+
+```text
+output/<name>/
+|-- <name>.safetensors or diffusers checkpoint folders
+|-- <name>_<step>.safetensors or step folders
+|-- samples/
+|-- log.txt
+|-- logs/
+|-- pid.txt
+`-- .job_config.json
 ```
 
-Key features:
-- **Bucketing**: Groups images by aspect ratio to minimize padding
-- **Latent Caching**: Pre-encodes images to latent space for faster training
-- **Caption Processing**: Token shuffling, dropout, trigger word injection
-- **Multi-resolution**: Train on multiple resolutions simultaneously
+The UI reads this output tree for logs, samples, files, and progress while the database tracks queue state and job metadata.
 
-### 6. Network Types (LoRA, LoKr, etc.)
+## Memory Strategies
 
-Located in `toolkit/lora_special.py` and `toolkit/lycoris_special.py`:
+Current memory controls are spread across model, training, network, and dataset config:
 
-```python
-class LoRASpecialNetwork:
-    """LoRA network implementation"""
+- `model.quantize`, `model.quantize_te`, `model.qtype`, `model.qtype_te`
+- `model.low_vram`
+- `model.layer_offloading`
+- `model.layer_offloading_transformer_percent`
+- `model.layer_offloading_text_encoder_percent`
+- `train.gradient_checkpointing`
+- `train.unload_text_encoder`
+- `train.cache_text_embeddings`
+- `datasets[].cache_latents_to_disk`
+- `network.layer_offloading`
 
-    def __init__(self, ...):
-        self.lora_dim = linear          # Rank
-        self.alpha = linear_alpha       # Alpha for scaling
-        self.dropout = dropout
-
-    def apply_to(self, model, ...):
-        """Inject LoRA layers into model"""
-
-    def save_weights(self, path, ...):
-        """Save LoRA weights to safetensors"""
-```
-
-Supported network types:
-- **LoRA** - Low-Rank Adaptation
-- **LoKr** - Low-Rank Kronecker Product
-- **LoCon** - LoRA with Convolution layers
-- **LoRM** - Low-Rank Matrix (experimental)
-
-### 7. Accelerator Integration
-
-Uses HuggingFace Accelerate for multi-GPU and mixed precision:
-
-```python
-# toolkit/accelerator.py
-def get_accelerator():
-    """Returns singleton Accelerator instance"""
-
-# Used throughout for:
-# - Automatic device placement
-# - Mixed precision training (fp16, bf16)
-# - Multi-GPU distribution
-# - Gradient accumulation
-```
-
-## Data Flow During Training
-
-```
-1. Config Loading
-   config.yaml → get_config() → Config dataclasses
-
-2. Model Initialization
-   ModelConfig → StableDiffusion.load_model() →
-   VAE, UNet, TextEncoders on device
-
-3. Dataset Preparation
-   DatasetConfig → AiToolkitDataset →
-   Cache latents (optional) → DataLoader
-
-4. Training Loop (per step)
-
-   batch = next(dataloader)
-   ├── images: [B, C, H, W] or cached latents: [B, C, H/8, W/8]
-   ├── captions: List[str]
-   └── control_images: Optional[Tensor]
-
-   latents = vae.encode(images) if not cached
-
-   noise = torch.randn_like(latents)
-   timesteps = sample_timesteps(batch_size)
-   noisy_latents = scheduler.add_noise(latents, noise, timesteps)
-
-   embeddings = text_encoder(captions)
-
-   with network.active():  # Enable LoRA
-       prediction = unet(noisy_latents, timesteps, embeddings)
-
-   loss = mse_loss(prediction, noise)  # or v-prediction target
-
-   loss.backward()
-   optimizer.step()
-   scheduler.step()
-
-5. Checkpointing
-   Every N steps → save_weights() → .safetensors
-
-6. Sampling
-   Every N steps → generate_images() → sample images to disk
-```
-
-## Memory Optimization Strategies
-
-AI-Toolkit employs several strategies for memory efficiency:
-
-1. **8-bit Quantization** (`model.quantize: true`)
-   - Uses optimum-quanto for 8-bit inference
-   - Reduces model memory by ~50%
-
-2. **Gradient Checkpointing** (`train.gradient_checkpointing: true`)
-   - Trades compute for memory
-   - Recomputes activations during backward pass
-
-3. **Latent Caching** (`datasets[].cache_latents_to_disk: true`)
-   - Pre-encodes images to latents
-   - Avoids loading VAE during training
-
-4. **Text Encoder Unloading** (`train.unload_text_encoder: true`)
-   - Caches trigger word embeddings
-   - Moves text encoder to CPU after encoding
-
-5. **Low VRAM Mode** (`model.low_vram: true`)
-   - Quantizes on CPU before moving to GPU
-   - Slower but uses less peak memory
-
-6. **Layer Offloading** (`model.layer_offloading: true`)
-   - Offloads transformer layers to CPU when not in use
-   - Enables training larger models on smaller GPUs
-
-## File Outputs
-
-Training produces the following outputs in `output/{name}/`:
-
-```
-output/my_lora_v1/
-├── config.yaml              # Copy of training config
-├── my_lora_v1_000000500.safetensors  # Checkpoint at step 500
-├── my_lora_v1_000001000.safetensors  # Checkpoint at step 1000
-├── optimizer.pt             # Optimizer state (for resuming)
-└── samples/
-    ├── 20240101-120000_000000500_0.jpg
-    ├── 20240101-120000_000000500_1.jpg
-    └── ...
-```
+Large video/audio/instruction models commonly combine quantization, low VRAM mode, text encoder unloading, and disk caches.

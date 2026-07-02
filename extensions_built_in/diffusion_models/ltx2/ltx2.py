@@ -4,6 +4,7 @@ from typing import List, Optional
 
 import torch
 import torchaudio
+import numpy as np
 from transformers import Gemma3Config
 import yaml
 from toolkit.config_modules import GenerateImageConfig, ModelConfig
@@ -713,30 +714,104 @@ class LTX2Model(BaseModel):
                 True  # they dont set this in some examples in diffusers, but I believe it should always be true for 2.3
             )
 
-        video, audio = pipeline(
-            prompt_embeds=conditional_embeds.text_embeds.to(
-                self.device_torch, dtype=self.torch_dtype
-            ),
-            prompt_attention_mask=conditional_embeds.attention_mask.to(
-                self.device_torch
-            ),
-            negative_prompt_embeds=unconditional_embeds.text_embeds.to(
-                self.device_torch, dtype=self.torch_dtype
-            ),
-            negative_prompt_attention_mask=unconditional_embeds.attention_mask.to(
-                self.device_torch
-            ),
-            height=gen_config.height,
-            width=gen_config.width,
-            num_inference_steps=gen_config.num_inference_steps,
-            guidance_scale=gen_config.guidance_scale,
-            latents=gen_config.latents,
-            num_frames=gen_config.num_frames,
-            generator=generator,
-            return_dict=False,
-            output_type="np" if is_video else "pil",
-            **extra,
-        )
+        restore_transformer_forward = None
+        if (
+            str(self.model_config.model_kwargs.get("ic_lora_strategy", "none")).lower() == "v2v"
+            and gen_config.reference_img is not None
+        ):
+            reference_img = Image.open(gen_config.reference_img).convert("RGB")
+            reference_img = reference_img.resize((gen_config.width, gen_config.height), Image.LANCZOS)
+            reference_np = np.array(reference_img).astype("float32") / 255.0
+            reference_tensor = torch.from_numpy(reference_np).permute(2, 0, 1)
+            reference_tensor = reference_tensor * 2.0 - 1.0
+            reference_latents = self.encode_images(
+                [reference_tensor],
+                device=self.device_torch,
+                dtype=self.torch_dtype,
+            )
+            reference_packed_latents = pipeline._pack_latents(
+                reference_latents,
+                patch_size=pipeline.transformer_spatial_patch_size,
+                patch_size_t=pipeline.transformer_temporal_patch_size,
+            )
+            reference_coords = pipeline.transformer.rope.prepare_video_coords(
+                reference_packed_latents.shape[0],
+                reference_latents.shape[2],
+                reference_latents.shape[3],
+                reference_latents.shape[4],
+                reference_packed_latents.device,
+                fps=gen_config.fps,
+            )
+            original_transformer_forward = pipeline.transformer.forward
+
+            def v2v_reference_forward(*args, **kwargs):
+                hidden_states = kwargs.get("hidden_states", args[0] if len(args) > 0 else None)
+                if hidden_states is None:
+                    return original_transformer_forward(*args, **kwargs)
+                batch = hidden_states.shape[0]
+                ref_tokens = reference_packed_latents
+                ref_video_coords = reference_coords
+                if ref_tokens.shape[0] != batch:
+                    repeat_count = (batch + ref_tokens.shape[0] - 1) // ref_tokens.shape[0]
+                    ref_tokens = ref_tokens.repeat(repeat_count, 1, 1)[:batch]
+                    ref_video_coords = ref_video_coords.repeat(repeat_count, 1, 1, 1)[:batch]
+                ref_seq_len = ref_tokens.shape[1]
+                target_seq_len = hidden_states.shape[1]
+                timestep = kwargs.get("timestep")
+                if timestep is not None:
+                    if kwargs.get("audio_timestep") is None:
+                        kwargs["audio_timestep"] = timestep
+                    if timestep.dim() == 1:
+                        target_timestep = timestep.unsqueeze(-1).expand(batch, target_seq_len)
+                    else:
+                        target_timestep = timestep
+                    reference_timestep = target_timestep.new_zeros(
+                        (batch, ref_seq_len, *target_timestep.shape[2:])
+                    )
+                    kwargs["timestep"] = torch.cat([reference_timestep, target_timestep], dim=1)
+                video_coords = kwargs.get("video_coords")
+                if video_coords is not None:
+                    kwargs["video_coords"] = torch.cat([ref_video_coords, video_coords], dim=2)
+                kwargs["hidden_states"] = torch.cat([ref_tokens.to(hidden_states.dtype), hidden_states], dim=1)
+                output = original_transformer_forward(*args[1:], **kwargs) if len(args) > 0 else original_transformer_forward(**kwargs)
+                if isinstance(output, tuple):
+                    return (output[0][:, ref_seq_len:, :], *output[1:])
+                if hasattr(output, "sample"):
+                    output.sample = output.sample[:, ref_seq_len:, :]
+                    return output
+                return output[:, ref_seq_len:, :]
+
+            restore_transformer_forward = original_transformer_forward
+            pipeline.transformer.forward = v2v_reference_forward
+
+        try:
+            video, audio = pipeline(
+                prompt_embeds=conditional_embeds.text_embeds.to(
+                    self.device_torch, dtype=self.torch_dtype
+                ),
+                prompt_attention_mask=conditional_embeds.attention_mask.to(
+                    self.device_torch
+                ),
+                negative_prompt_embeds=unconditional_embeds.text_embeds.to(
+                    self.device_torch, dtype=self.torch_dtype
+                ),
+                negative_prompt_attention_mask=unconditional_embeds.attention_mask.to(
+                    self.device_torch
+                ),
+                height=gen_config.height,
+                width=gen_config.width,
+                num_inference_steps=gen_config.num_inference_steps,
+                guidance_scale=gen_config.guidance_scale,
+                latents=gen_config.latents,
+                num_frames=gen_config.num_frames,
+                generator=generator,
+                return_dict=False,
+                output_type="np" if is_video else "pil",
+                **extra,
+            )
+        finally:
+            if restore_transformer_forward is not None:
+                pipeline.transformer.forward = restore_transformer_forward
         if self.low_vram:
             # Restore no tiling
             # pipeline.vae.use_tiling = False
@@ -923,6 +998,42 @@ class LTX2Model(BaseModel):
                 patch_size=self.pipeline.transformer_spatial_patch_size,
                 patch_size_t=self.pipeline.transformer_temporal_patch_size,
             )
+            target_seq_len = packed_latents.shape[1]
+            reference_seq_len = 0
+            ref_latent_num_frames = None
+            ref_latent_height = None
+            ref_latent_width = None
+            ic_lora_strategy = str(self.model_config.model_kwargs.get("ic_lora_strategy", "none")).lower()
+            if ic_lora_strategy == "v2v":
+                if batch.reference_latents is None:
+                    raise ValueError("LTX2 IC/V2V training requires dataset reference_latents. Set reference_path and cache latents.")
+                reference_latents = batch.reference_latents.to(self.device_torch, dtype=self.torch_dtype)
+                if reference_latents.shape[0] != batch_size:
+                    raise ValueError(
+                        f"Reference batch size mismatch: target={batch_size}, reference={reference_latents.shape[0]}"
+                    )
+                if reference_latents.shape[1] != C:
+                    raise ValueError(
+                        f"Reference channel mismatch: target={C}, reference={reference_latents.shape[1]}"
+                    )
+                ref_latent_num_frames = reference_latents.shape[2]
+                ref_latent_height = reference_latents.shape[3]
+                ref_latent_width = reference_latents.shape[4]
+                reference_packed_latents = self.pipeline._pack_latents(
+                    reference_latents,
+                    patch_size=self.pipeline.transformer_spatial_patch_size,
+                    patch_size_t=self.pipeline.transformer_temporal_patch_size,
+                )
+                reference_seq_len = reference_packed_latents.shape[1]
+                packed_latents = torch.cat([reference_packed_latents, packed_latents], dim=1)
+                if video_timestep.dim() == 1:
+                    target_video_timestep = video_timestep.unsqueeze(-1).expand(batch_size, target_seq_len)
+                else:
+                    target_video_timestep = video_timestep
+                reference_video_timestep = target_video_timestep.new_zeros(
+                    (batch_size, reference_seq_len, *target_video_timestep.shape[2:])
+                )
+                video_timestep = torch.cat([reference_video_timestep, target_video_timestep], dim=1)
 
             if batch.audio_latents is not None or batch.audio_tensor is not None:
                 if batch.audio_latents is not None:
@@ -989,13 +1100,28 @@ class LTX2Model(BaseModel):
 
             # compute video and audio positional ids
             video_coords = self.transformer.rope.prepare_video_coords(
-                packed_latents.shape[0],
+                batch_size,
                 latent_num_frames,
                 latent_height,
                 latent_width,
                 packed_latents.device,
                 fps=frame_rate,
             )
+            if ic_lora_strategy == "v2v":
+                reference_video_coords = self.transformer.rope.prepare_video_coords(
+                    batch_size,
+                    ref_latent_num_frames,
+                    ref_latent_height,
+                    ref_latent_width,
+                    packed_latents.device,
+                    fps=frame_rate,
+                )
+                reference_downscale = getattr(batch.dataset_config, "reference_downscale", 1)
+                if reference_downscale != 1:
+                    reference_video_coords = reference_video_coords.clone()
+                    reference_video_coords[:, 1, ...] *= reference_downscale
+                    reference_video_coords[:, 2, ...] *= reference_downscale
+                video_coords = torch.cat([reference_video_coords, video_coords], dim=2)
             audio_coords = self.transformer.audio_rope.prepare_audio_coords(
                 audio_latents.shape[0], audio_num_frames, audio_latents.device
             )
@@ -1033,6 +1159,9 @@ class LTX2Model(BaseModel):
         # add audio latent to batch if we had audio
         if batch.audio_target is not None:
             batch.audio_pred = noise_pred_audio
+
+        if reference_seq_len > 0:
+            noise_pred_video = noise_pred_video[:, reference_seq_len:, :]
 
         unpacked_output = self.pipeline._unpack_latents(
             latents=noise_pred_video,

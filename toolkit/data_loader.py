@@ -39,6 +39,21 @@ if TYPE_CHECKING:
 image_extensions = ['.jpg', '.jpeg', '.png', '.webp']
 video_extensions = ['.mp4', '.avi', '.mov', '.webm', '.mkv', '.wmv', '.m4v', '.flv']
 audio_extensions = ['.mp3', '.wav', '.flac', '.aac', '.ogg', '.m4a']
+ignored_reference_dirs = {'_controls', '_latent_cache', '.thumbs', 'cache', 'cache_ref'}
+
+
+def build_paired_file_map(path: str, extensions: List[str]):
+    if path is None or isinstance(path, list) or not os.path.isdir(path):
+        return {}
+    paired_map = {}
+    for root, dirs, files in os.walk(path):
+        dirs[:] = [d for d in dirs if d not in ignored_reference_dirs and not d.startswith('.')]
+        for file in files:
+            if file.startswith('.') or not file.lower().endswith(tuple(extensions)):
+                continue
+            stem = os.path.splitext(file)[0]
+            paired_map.setdefault(stem, os.path.join(root, file))
+    return paired_map
 
 
 class RescaleTransform:
@@ -448,6 +463,13 @@ class AiToolkitDataset(LatentCachingMixin, ControlCachingMixin, CLIPCachingMixin
             # repeat the list
             file_list = file_list * self.dataset_config.num_repeats
 
+        reference_map = {}
+        if self.dataset_config.reference_path is not None and not isinstance(self.dataset_config.reference_path, list):
+            reference_extensions = video_extensions if self.is_video else image_extensions
+            reference_map = build_paired_file_map(self.dataset_config.reference_path, reference_extensions)
+            if len(reference_map) == 0 and self.dataset_config.require_reference:
+                raise ValueError(f"reference_path has no matching files: {self.dataset_config.reference_path}")
+
         if self.dataset_config.standardize_images:
             if self.sd.is_xl or self.sd.is_vega or self.sd.is_ssd:
                 NormalizeMethod = NormalizeSDXLTransform
@@ -524,9 +546,15 @@ class AiToolkitDataset(LatentCachingMixin, ControlCachingMixin, CLIPCachingMixin
         bad_count = 0
         for file in tqdm(file_list):
             try:
+                reference_path = None
+                if reference_map:
+                    reference_path = reference_map.get(os.path.splitext(os.path.basename(file))[0])
+                    if reference_path is None and self.dataset_config.require_reference:
+                        raise ValueError(f"Missing reference file for {file} in {self.dataset_config.reference_path}")
                 file_item = FileItemDTO(
                     sd=self.sd,
                     path=file,
+                    reference_path=reference_path,
                     is_audio_model=self.is_audio_model,
                     dataset_config=dataset_config,
                     dataloader_transforms=self.transform,
@@ -548,6 +576,10 @@ class AiToolkitDataset(LatentCachingMixin, ControlCachingMixin, CLIPCachingMixin
                     print_acc(f"Error processing image: {file}")
                 print_acc(e)
                 bad_count += 1
+
+        if reference_map:
+            matched_reference_count = len([x for x in self.file_list if x.reference_path is not None])
+            print_acc(f"  -  Matched {matched_reference_count} paired reference files")
 
         # save the size database
         with open(dataset_size_file, 'w') as f:

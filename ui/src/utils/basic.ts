@@ -5,12 +5,32 @@ export const objectCopy = <T>(obj: T): T => {
 export const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export const imgExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp'];
-export const videoExtensions = ['.mp4', '.avi', '.mov', '.mkv', '.wmv', '.m4v', '.flv'];
+export const videoExtensions = ['.mp4', '.avi', '.mov', '.mkv', '.wmv', '.m4v', '.flv', '.webm'];
 export const audioExtensions = ['.mp3', '.wav', '.flac', '.ogg'];
 
-export const isVideo = (filePath: string) => videoExtensions.includes(filePath.toLowerCase().slice(-4));
-export const isImage = (filePath: string) => imgExtensions.includes(filePath.toLowerCase().slice(-4));
-export const isAudio = (filePath: string) => audioExtensions.includes(filePath.toLowerCase().slice(-4));
+const hasExtension = (filePath: string, extensions: string[]) => {
+  const normalizedPath = filePath.toLowerCase();
+  return extensions.some(extension => normalizedPath.endsWith(extension));
+};
+
+export const isVideo = (filePath: string) => hasExtension(filePath, videoExtensions);
+export const isImage = (filePath: string) => hasExtension(filePath, imgExtensions);
+export const isAudio = (filePath: string) => hasExtension(filePath, audioExtensions);
+
+export const getPathParts = (filePath: string) => {
+  return filePath.split(/[\\/]/).filter(Boolean);
+};
+
+export const getFilename = (filePath: string) => {
+  const parts = getPathParts(filePath);
+  return parts.length > 0 ? parts[parts.length - 1] : filePath;
+};
+
+export const getFoldername = (filePath: string) => {
+  const normalized = filePath.replace(/[\\/]+$/, '');
+  const idx = Math.max(normalized.lastIndexOf('/'), normalized.lastIndexOf('\\'));
+  return idx >= 0 ? normalized.slice(0, idx) : '';
+};
 
 export const tagsToObj = (tagStr: string): Record<string, any> => {
   const result: Record<string, any> = {};
@@ -36,16 +56,6 @@ export const objToTags = (obj: Record<string, any>): string => {
     .join('\n');
 };
 
-export const getFilename = (filePath: string) => {
-  const idx = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'));
-  return idx === -1 ? filePath : filePath.slice(idx + 1);
-};
-
-export const getFoldername = (filePath: string) => {
-  const idx = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'));
-  return idx === -1 ? '' : filePath.slice(0, idx);
-};
-
 export const pathJoin = (...parts: string[]) => {
   const sep = parts.length > 0 && parts[0].includes('\\') ? '\\' : '/';
   const leadingTrailing = sep === '\\' ? /^\\+|\\+$/g : /^\/+|\/+$/g;
@@ -60,4 +70,4 @@ export const pathJoin = (...parts: string[]) => {
     })
     .filter(part => part.length > 0)
     .join(sep);
-}
+};

@@ -369,7 +369,7 @@ class SDTrainer(BaseSDTrainProcess):
                 if hasattr(self.dfe.model, 'enable_gradient_checkpointing'): 
                     self.dfe.model.train()
                     self.dfe.model.enable_gradient_checkpointing()
-                if hasattr(self.dfe.model, 'gradient_checkpointing_enable'): 
+                if hasattr(self.dfe.model, 'gradient_checkpointing_enable'):
                     self.dfe.model.train()
                     self.dfe.model.gradient_checkpointing_enable()
                 elif hasattr(self.dfe.model, 'gradient_checkpointing'):

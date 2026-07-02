@@ -104,6 +104,10 @@ export interface DatasetConfig {
   controls: string[];
   control_path?: string | null;
   reference_path?: string | string[] | null;
+  reference_cache_path?: string | null;
+  require_reference?: boolean;
+  reference_frames?: number;
+  reference_downscale?: number;
   num_frames: number;
   shrink_video_to_frames: boolean;
   do_i2v?: boolean;

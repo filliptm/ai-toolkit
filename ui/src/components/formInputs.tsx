@@ -287,7 +287,7 @@ export const SelectInput = (props: SelectInputProps) => {
         onChange={selected => {
           if (multiple) {
             const arr = (selected as { value: string }[] | null) ?? [];
-            (onChange as (v: string[]) => void)(arr.map(o => o.value));
+            (onChange as (v: string[]) => void)(arr.map(option => option.value));
           } else if (selected) {
             (onChange as (v: string) => void)((selected as { value: string }).value);
           }

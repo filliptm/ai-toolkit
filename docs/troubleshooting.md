@@ -39,7 +39,7 @@ python -c "import torch; print(torch.cuda.is_available())"
 ```bash
 # Reinstall PyTorch with CUDA
 pip uninstall torch torchvision torchaudio
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
+pip install --no-cache-dir torch==2.9.1 torchvision==0.24.1 torchaudio==2.9.1 --index-url https://download.pytorch.org/whl/cu128
 ```
 
 ---
@@ -60,7 +60,7 @@ pip install -r requirements.txt
 # Create fresh environment
 python -m venv venv
 source venv/bin/activate  # or .\venv\Scripts\activate on Windows
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
+pip install --no-cache-dir torch==2.9.1 torchvision==0.24.1 torchaudio==2.9.1 --index-url https://download.pytorch.org/whl/cu128
 pip install -r requirements.txt
 ```
 

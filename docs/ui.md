@@ -1,502 +1,170 @@
 # UI Guide
 
-AI-Toolkit includes a web-based user interface built with Next.js. This guide covers using and understanding the UI.
+The UI is a Next.js 15 / React 19 application in `ui/`. It manages jobs, datasets, settings, sample previews, system status, and a SQLite-backed queue. The queue worker runs beside the UI in development and production scripts.
 
-## Starting the UI
-
-### Quick Start
+## Starting The UI
 
 ```bash
 cd ui
 npm install
+npm run update_db
 npm run dev
 ```
 
-Or use the provided batch file:
+`npm run dev` starts two processes with `concurrently`:
+
+- `ts-node-dev --project tsconfig.worker.json --respawn --watch cron --transpile-only cron/worker.ts`
+- `next dev`
+
+The root `start.sh` and `start.bat` scripts clear `UI_PORT`/`3000`, enter `ui/`, and run `npm run dev`. Production startup is:
 
 ```bash
-./run-ui.bat
+cd ui
+npm install
+npm run update_db
+npm run build
+npm run start
 ```
 
-The UI will be available at `http://localhost:3000`.
+`npm run start` launches the compiled worker and `next start --port 8675`.
+
+## Storage And Settings
+
+The UI uses Prisma with SQLite at `aitk_db.db` through `ui/prisma/schema.prisma`.
+
+| Table | Purpose |
+|-------|---------|
+| `Settings` | Persistent UI settings such as `TRAINING_FOLDER`, `DATASETS_FOLDER`, `DATA_ROOT`, and `HF_TOKEN` |
+| `Queue` | Per-GPU queue state keyed by `gpu_ids` |
+| `Job` | Job config JSON, status, PID, queue position, progress, and metadata |
+
+Default paths come from `ui/src/paths.ts` and `ui/cron/paths.ts`:
+
+| Setting | Default |
+|---------|---------|
+| `TRAINING_FOLDER` | `<repo>/output` |
+| `DATASETS_FOLDER` | `<repo>/datasets` |
+| `DATA_ROOT` | `<repo>/data` |
+
+The worker injects `AITK_JOB_ID`, `CUDA_DEVICE_ORDER=PCI_BUS_ID`, `CUDA_VISIBLE_DEVICES`, `IS_AI_TOOLKIT_UI=1`, and `HF_TOKEN` when launching `python run.py`.
+
+## Pages And Features
+
+| Route | Purpose |
+|-------|---------|
+| `/` | Main app entry |
+| `/dashboard` | System/job overview |
+| `/jobs` | Job list |
+| `/jobs/new` | Job builder |
+| `/jobs/[jobID]` | Job detail, logs, loss graph, samples, and controls |
+| `/datasets` | Dataset list and management |
+| `/datasets/[datasetName]` | Dataset image/caption management |
+| `/settings` | Settings persisted to SQLite |
+
+The job builder writes `job: extension` configs with `process[0].type: diffusion_trainer` by default. The UI also exposes a Concept Slider job type using `process[0].type: concept_slider`.
+
+## Model Presets
+
+UI presets live in `ui/src/app/jobs/new/options.ts`. They define:
+
+- `modelArchs`: model labels, architecture IDs, defaults, disabled fields, extra form sections, and optional Accuracy Recovery Adapters
+- `jobTypeOptions`: currently `diffusion_trainer` and `concept_slider`
+- `quantizationOptions`: `qfloat8`, `uint7`, `uint6`, `uint5`, `uint4`, `uint3`, `uint2`
+
+The default job config lives in `ui/src/app/jobs/new/jobConfig.ts`. `migrateJobConfig()` upgrades old prompt arrays, changes `ui_trainer` to `diffusion_trainer`, and migrates `auto_memory` to `layer_offloading`.
+
+## API Routes
+
+Current route handlers are:
+
+### Jobs
+
+| Method | Route | Purpose |
+|--------|-------|---------|
+| `GET` | `/api/jobs` | List jobs; supports `id`, `job_ref`, and `job_type` query filters |
+| `POST` | `/api/jobs` | Create/update a job from a JSON body |
+| `GET` | `/api/jobs/[jobID]/start` | Mark a job running and launch it through the worker action |
+| `GET` | `/api/jobs/[jobID]/stop` | Request stop |
+| `GET` | `/api/jobs/[jobID]/mark_stopped` | Mark stopped |
+| `GET` | `/api/jobs/[jobID]/delete` | Delete job |
+| `GET` | `/api/jobs/[jobID]/log` | Read training log |
+| `GET` | `/api/jobs/[jobID]/loss` | Read logged loss/progress values; supports `key`, `limit`, `since_step`, and `stride` |
+| `GET` | `/api/jobs/[jobID]/samples` | List generated sample media |
+| `GET` | `/api/jobs/[jobID]/files` | List job files |
+
+### Queue
+
+| Method | Route | Purpose |
+|--------|-------|---------|
+| `GET` | `/api/queue` | List queues/jobs |
+| `GET` | `/api/queue/[queueID]/start` | Start queue processing |
+| `GET` | `/api/queue/[queueID]/stop` | Stop queue processing |
+
+### Datasets And Media
+
+| Method | Route | Purpose |
+|--------|-------|---------|
+| `GET` | `/api/datasets/list` | List datasets under the configured dataset root |
+| `POST` | `/api/datasets/create` | Create dataset |
+| `POST` | `/api/datasets/delete` | Delete dataset |
+| `POST` | `/api/datasets/listImages` | List images for a dataset |
+| `POST` | `/api/datasets/upload` | Upload files to a dataset |
+| `POST` | `/api/datasets/referencePairs` | Build/list reference pairs |
+| `POST` | `/api/datasets/outpaint` | Build outpaint training assets |
+| `GET` | `/api/img/[...imagePath]` | Serve images/media with range support |
+| `POST` | `/api/img/upload` | Upload an image |
+| `POST` | `/api/img/delete` | Delete an image |
+| `POST` | `/api/img/caption` | Save an image caption |
+| `POST` | `/api/caption/get` | Generate/read caption data |
+| `GET` | `/api/audio/art/[...audioPath]` | Serve embedded/generated audio artwork |
+| `GET` | `/api/files/[...filePath]` | Serve files with range support |
+| `POST` | `/api/zip` | Create zip output from requested files |
+
+### System And Utilities
+
+| Method | Route | Purpose |
+|--------|-------|---------|
+| `GET` | `/api/gpu` | GPU status from `nvidia-smi`, plus macOS handling |
+| `GET` | `/api/cpu` | CPU and memory status from `systeminformation` |
+| `GET` | `/api/settings` | Read persisted settings |
+| `POST` | `/api/settings` | Save settings and flush settings cache |
+| `GET` | `/api/auth` | Auth/session check |
+| `POST` | `/api/scripts` | Run allowed UI script actions |
 
-### Configuration
+## Queue Worker
 
-The UI can be configured via environment variables or a `.env.local` file:
+`ui/cron/worker.ts` runs every second and calls `processQueue()`. The queue logic:
 
-```bash
-# ui/.env.local
-PORT=3000
-TRAINING_FOLDER=./output
-DATABASE_PATH=./aitk_db.db
-```
+1. Reads all `Queue` rows ordered by `id`.
+2. If a queue is stopped, running jobs on that queue's `gpu_ids` are marked to return to queue.
+3. If a queue is running and no job is currently `running` or `stopping` for those GPUs, the next `queued` job is started.
+4. If no queued job exists for that queue, the queue is stopped.
 
----
+`startJob()` writes `.job_config.json`, rotates `log.txt` into `logs/`, records `pid.txt`, and launches `run.py` detached so training can continue if the UI process exits.
 
-## UI Features
+## Frontend Structure
 
-### Dashboard
-
-The main dashboard shows:
-- Running jobs
-- Recent training runs
-- GPU utilization
-- System status
-
-### Jobs Page
-
-Create and manage training jobs:
-
-1. **New Job** - Create training configuration
-2. **Job List** - View all jobs
-3. **Job Details** - Monitor running jobs
-
-### Datasets Page
-
-Manage training datasets:
-
-1. **Upload Images** - Drag and drop images
-2. **Add Captions** - Auto or manual captioning
-3. **Preview** - View dataset with captions
-
----
-
-## Creating a Training Job
-
-### Step 1: Select Model Architecture
-
-Choose from supported models:
-- FLUX.1, FLUX.2, Flex.1/2
-- SDXL, SD 1.5
-- Wan 2.1/2.2, LTX-2
-- And more...
-
-### Step 2: Configure Training
-
-| Setting | Description |
-|---------|-------------|
-| Name | Unique training run name |
-| Trigger Word | Word to invoke your training |
-| Steps | Total training steps |
-| Learning Rate | Training speed |
-| Batch Size | Images per step |
-| Network Rank | LoRA capacity |
-
-### Step 3: Add Dataset
-
-1. Click "Add Dataset"
-2. Select folder path
-3. Configure resolution
-4. Set caption settings
-
-### Step 4: Configure Sampling
-
-Add prompts to test during training:
-
-1. Click "Add Prompt"
-2. Enter test prompt with `[trigger]`
-3. Set sample frequency
-
-### Step 5: Start Training
-
-Click "Start Training" to begin. Monitor:
-- Loss graph
-- Sample images
-- Training progress
-
----
-
-## API Endpoints
-
-The UI exposes a REST API for programmatic access.
-
-### Jobs API
-
-#### List Jobs
-```bash
-GET /api/jobs
-
-Response:
-{
-  "jobs": [
-    {
-      "id": "my_lora_v1",
-      "status": "running",
-      "step": 500,
-      "total_steps": 2000
-    }
-  ]
-}
-```
-
-#### Get Job Details
-```bash
-GET /api/jobs/{jobID}
-
-Response:
-{
-  "id": "my_lora_v1",
-  "status": "running",
-  "step": 500,
-  "total_steps": 2000,
-  "loss": 0.05,
-  "config": { ... }
-}
-```
-
-#### Start Job
-```bash
-POST /api/jobs/{jobID}/start
-```
-
-#### Stop Job
-```bash
-POST /api/jobs/{jobID}/stop
-```
-
-#### Delete Job
-```bash
-DELETE /api/jobs/{jobID}/delete
-```
-
-#### Get Job Logs
-```bash
-GET /api/jobs/{jobID}/log
-
-Response:
-{
-  "logs": [
-    {"step": 100, "loss": 0.08, "lr": 0.0001},
-    {"step": 200, "loss": 0.06, "lr": 0.0001}
-  ]
-}
-```
-
-#### Get Job Samples
-```bash
-GET /api/jobs/{jobID}/samples
-
-Response:
-{
-  "samples": [
-    {"step": 250, "prompt": "test prompt", "path": "/samples/..."}
-  ]
-}
-```
-
-#### Get Loss History
-```bash
-GET /api/jobs/{jobID}/loss
-
-Response:
-{
-  "loss": [
-    {"step": 100, "loss": 0.08},
-    {"step": 200, "loss": 0.06}
-  ]
-}
-```
-
-### Datasets API
-
-#### List Datasets
-```bash
-GET /api/datasets/list
-
-Response:
-{
-  "datasets": [
-    {"name": "my_dataset", "path": "/path/to/dataset", "count": 50}
-  ]
-}
-```
-
-#### Create Dataset
-```bash
-POST /api/datasets/create
-Content-Type: application/json
-
-{
-  "name": "my_new_dataset",
-  "path": "/path/to/images"
-}
-```
-
-#### Delete Dataset
-```bash
-DELETE /api/datasets/delete
-
-{
-  "name": "my_dataset"
-}
-```
-
-#### List Dataset Images
-```bash
-GET /api/datasets/listImages?dataset=my_dataset
-
-Response:
-{
-  "images": [
-    {"name": "image1.jpg", "caption": "a photo of..."}
-  ]
-}
-```
-
-### Image API
-
-#### Upload Image
-```bash
-POST /api/img/upload
-Content-Type: multipart/form-data
-
-file: <image file>
-dataset: "my_dataset"
-```
-
-#### Get Caption
-```bash
-GET /api/caption/get?image=/path/to/image.jpg
-
-Response:
-{
-  "caption": "a photo of..."
-}
-```
-
-#### Save Caption
-```bash
-POST /api/img/caption
-Content-Type: application/json
-
-{
-  "image": "/path/to/image.jpg",
-  "caption": "new caption"
-}
-```
-
-### System API
-
-#### GPU Status
-```bash
-GET /api/gpu
-
-Response:
-{
-  "gpus": [
-    {
-      "id": 0,
-      "name": "NVIDIA RTX 4090",
-      "memory_used": 12000,
-      "memory_total": 24576,
-      "utilization": 85
-    }
-  ]
-}
-```
-
-#### CPU Status
-```bash
-GET /api/cpu
-
-Response:
-{
-  "cpu_percent": 45,
-  "memory_percent": 60
-}
-```
-
-### Queue API
-
-#### List Queue
-```bash
-GET /api/queue
-
-Response:
-{
-  "queue": [
-    {"id": "job1", "position": 1},
-    {"id": "job2", "position": 2}
-  ]
-}
-```
-
-#### Start Queue
-```bash
-POST /api/queue/{queueID}/start
-```
-
-#### Stop Queue
-```bash
-POST /api/queue/{queueID}/stop
-```
-
----
-
-## UI Architecture
-
-### Frontend Stack
-
-- **Next.js 14** - React framework
-- **TypeScript** - Type safety
-- **Tailwind CSS** - Styling
-- **SWR** - Data fetching
-
-### Directory Structure
-
-```
+```text
 ui/
-├── src/
-│   ├── app/               # Next.js app router pages
-│   │   ├── api/           # API routes
-│   │   ├── dashboard/     # Dashboard page
-│   │   ├── datasets/      # Dataset pages
-│   │   ├── jobs/          # Job pages
-│   │   └── settings/      # Settings page
-│   ├── components/        # React components
-│   ├── hooks/             # Custom React hooks
-│   ├── utils/             # Utility functions
-│   └── types.ts           # TypeScript types
-└── public/                # Static assets
+|-- cron/                 # Queue worker, Prisma client, and process launch actions
+|-- prisma/schema.prisma  # SQLite schema
+|-- src/app/              # Next.js app routes and API routes
+|-- src/components/       # Shared UI components
+|-- src/hooks/            # Data-fetching hooks
+|-- src/helpers/          # Job/sample/caption helpers
+|-- src/utils/            # API, queue, job, script utilities
+|-- src/types.ts          # Shared TypeScript types
+`-- public/               # Static assets
 ```
 
-### Key Components
-
-| Component | Purpose |
-|-----------|---------|
-| `JobOverview` | Job status and controls |
-| `JobLossGraph` | Loss visualization |
-| `SampleImages` | Sample image gallery |
-| `GPUMonitor` | GPU usage display |
-| `DatasetImageCard` | Dataset image preview |
-
-### Data Fetching Hooks
-
-| Hook | Purpose |
-|------|---------|
-| `useJob` | Fetch single job data |
-| `useJobsList` | Fetch all jobs |
-| `useJobLog` | Fetch job logs |
-| `useJobLossLog` | Fetch loss history |
-| `useSampleImages` | Fetch sample images |
-| `useDatasetList` | Fetch datasets |
-| `useGPUInfo` | Fetch GPU status |
-
----
-
-## Job Configuration (UI)
-
-The UI generates configurations compatible with `diffusion_trainer`:
-
-```typescript
-// ui/src/app/jobs/new/jobConfig.ts
-
-export const defaultJobConfig: JobConfig = {
-  job: 'extension',
-  config: {
-    name: 'my_first_lora_v1',
-    process: [{
-      type: 'diffusion_trainer',
-      training_folder: 'output',
-      sqlite_db_path: './aitk_db.db',
-      device: 'cuda',
-      trigger_word: null,
-      network: {
-        type: 'lora',
-        linear: 32,
-        linear_alpha: 32,
-      },
-      // ... rest of config
-    }]
-  }
-};
-```
-
-### Model Architectures
-
-Available models are defined in `options.ts`:
-
-```typescript
-export const modelArchs: ModelArch[] = [
-  {
-    name: 'flux',
-    label: 'FLUX.1',
-    group: 'image',
-    defaults: {
-      'config.process[0].model.name_or_path': ['black-forest-labs/FLUX.1-dev', ''],
-      'config.process[0].model.quantize': [true, false],
-      // ...
-    },
-    disableSections: ['network.conv'],
-  },
-  // ... more models
-];
-```
-
----
-
-## Customizing the UI
-
-### Adding New Model Support
-
-1. Edit `ui/src/app/jobs/new/options.ts`:
-
-```typescript
-{
-  name: 'my_model',
-  label: 'My Custom Model',
-  group: 'image',
-  defaults: {
-    'config.process[0].model.name_or_path': ['org/my-model', ''],
-    'config.process[0].model.arch': ['my_arch', null],
-  },
-}
-```
-
-2. Add any model-specific UI sections as needed.
-
-### Adding New Settings
-
-1. Update types in `ui/src/types.ts`
-2. Add form inputs in job creation page
-3. Handle in API routes
-
----
+Important hooks include `useJobsList`, `useJob`, `useJobByRef`, `useQueueList`, `useJobLog`, `useJobLossLog`, `useSampleImages`, `useDatasetList`, `useFilesList`, `useGPUInfo`, and `useCPUInfo`.
 
 ## Troubleshooting
 
-### UI Won't Start
-
 ```bash
-# Check Node.js version
-node --version  # Should be 18+
-
-# Clear cache and reinstall
-rm -rf node_modules .next
-npm install
+cd ui
+npm run update_db
 npm run dev
 ```
 
-### Jobs Not Showing
-
-- Ensure `training_folder` matches
-- Check database path
-- Verify file permissions
-
-### API Errors
-
-Check console for errors:
-```bash
-npm run dev
-# Check terminal output
-```
-
-### GPU Not Detected
-
-- Ensure CUDA is installed
-- Check `nvidia-smi` works
-- Verify PyTorch sees GPU:
-```python
-import torch
-print(torch.cuda.is_available())
-```
+If the UI cannot see jobs, verify the `TRAINING_FOLDER` setting and that `aitk_db.db` is reachable from the repo root. If jobs launch but do not train, check the job folder's `log.txt` and `pid.txt` under the configured training folder.
