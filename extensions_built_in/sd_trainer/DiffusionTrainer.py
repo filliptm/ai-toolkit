@@ -21,6 +21,7 @@ class DiffusionTrainer(SDTrainer):
         self.job_id = os.environ.get("AITK_JOB_ID", None)
         self.job_id = self.job_id.strip() if self.job_id is not None else None
         self.is_ui_trainer = True
+        self._job_schema_checked = False
         if not os.path.exists(self.sqlite_db_path):
             self.is_ui_trainer = False
         else:
@@ -113,7 +114,35 @@ class DiffusionTrainer(SDTrainer):
         """Create a new connection for each operation to avoid locking."""
         conn = sqlite3.connect(self.sqlite_db_path, timeout=30.0)
         conn.isolation_level = None  # Enable autocommit mode
+        if self.is_ui_trainer:
+            self._ensure_job_schema(conn)
         return conn
+
+    def _ensure_job_schema(self, conn):
+        """Add UI job columns that may be missing from older local databases."""
+        if self._job_schema_checked:
+            return
+
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(Job)")
+        existing_columns = {row[1] for row in cursor.fetchall()}
+        missing_columns = {
+            "total_steps": "INTEGER",
+            "save_now": "BOOLEAN NOT NULL DEFAULT 0",
+        }
+
+        for column_name, column_definition in missing_columns.items():
+            if column_name in existing_columns:
+                continue
+            try:
+                cursor.execute(
+                    f"ALTER TABLE Job ADD COLUMN {column_name} {column_definition}"
+                )
+            except sqlite3.OperationalError as e:
+                if "duplicate column name" not in str(e).lower():
+                    raise
+
+        self._job_schema_checked = True
 
     def _retry_db_operation(self, operation_func, max_retries=3, base_delay=2.0):
         """Retry a database operation with exponential backoff on lock errors."""
