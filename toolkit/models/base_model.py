@@ -196,6 +196,9 @@ class BaseModel:
 
         # if a mask is passed, do the loss with the mask. May be set false for models that use a mask for other reasons.
         self.do_masked_loss = True
+        
+        # if the model outputs an x0 prediction (clean latent)
+        self.x0_pred = False
 
     # properties for old arch for backwards compatibility
     @property
@@ -276,6 +279,18 @@ class BaseModel:
         if self.is_flux:
             divisibility = divisibility * 2
         return divisibility
+
+    def get_frame_count_snapper(self):
+        """Optional hook for video models whose VAE accepts frame counts on a
+        grid other than the default ``temporal_compression * n + 1``.
+
+        Return a MODULE-LEVEL function ``(num_frames: int) -> int`` that snaps
+        an arbitrary frame count DOWN to the nearest count the video VAE can
+        encode (it must be picklable by reference — file items travel into
+        dataloader workers, so no lambdas or bound methods). Returning None
+        keeps the default auto_frame_count behavior.
+        """
+        return None
 
     # these must be implemented in child classes
     def load_model(self):
@@ -434,7 +449,7 @@ class BaseModel:
                 if network is not None:
                     assert network.is_active
 
-                for i in tqdm(range(len(image_configs)), desc=f"Generating Samples", leave=False):
+                for i in tqdm(range(len(image_configs)), desc=f"Generating Samples", leave=True, position=0):
                     gen_config = image_configs[i]
 
                     extra = {}
@@ -666,7 +681,7 @@ class BaseModel:
                         extra,
                     )
 
-                    gen_config.save_image(img, i)
+                    gen_config.save_image_atomic(img, i)
                     gen_config.log_image(img, i)
                     self._after_sample_image(i, len(image_configs))
                     flush()

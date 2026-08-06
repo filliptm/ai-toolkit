@@ -55,12 +55,26 @@ export async function GET(request: NextRequest, { params }: { params: { imagePat
 
     const allowedDirs = [datasetRoot, trainingRoot, dataRoot].map(dir => path.resolve(dir));
 
-    // Security check: Ensure path is in allowed directory
-    const isAllowed = allowedDirs.some(allowedDir => isPathInAllowedDir(filepath, allowedDir));
+    // Security check: resolve the path so any `..` segments are collapsed,
+    // then ensure it's still under an allowed root. (Plain `.includes('..')`
+    // false-positives on filenames that contain `..` as text, e.g. an ellipsis.)
+    let resolved = path.resolve(filepath);
+    const isAllowed = allowedDirs.some(allowedDir => isPathInAllowedDir(resolved, allowedDir));
 
     if (!isAllowed) {
       console.warn(`Access denied: ${filepath} not in ${allowedDirs.join(', ')}`);
       return new NextResponse('Access denied', { status: 403 });
+    }
+
+    // ?thumb=1 serves the pre-generated 300x300 jpg from the sibling .thumbs
+    // folder (<name>.<ext>.jpg) when it exists; otherwise falls through to
+    // the full file exactly as before.
+    if (request.nextUrl.searchParams.has('thumb')) {
+      const thumbPath = path.join(path.dirname(resolved), '.thumbs', path.basename(resolved) + '.jpg');
+      const thumbStat = await fs.promises.stat(thumbPath).catch(() => null);
+      if (thumbStat && thumbStat.isFile()) {
+        resolved = thumbPath;
+      }
     }
 
     // Bail out early if the client already gave up
@@ -69,12 +83,12 @@ export async function GET(request: NextRequest, { params }: { params: { imagePat
     }
 
     // Stat file (async)
-    const stat = await fs.promises.stat(filepath).catch(() => null);
+    const stat = await fs.promises.stat(resolved).catch(() => null);
     if (!stat || !stat.isFile()) {
       return new NextResponse('File not found', { status: 404 });
     }
 
-    const ext = path.extname(filepath).toLowerCase();
+    const ext = path.extname(resolved).toLowerCase();
     const contentType = contentTypeMap[ext] || 'application/octet-stream';
 
     // Weak ETag from inode/size/mtime — cheap and stable enough for revalidation
@@ -95,8 +109,8 @@ export async function GET(request: NextRequest, { params }: { params: { imagePat
     const buildBody = (start?: number, end?: number) => {
       const nodeStream =
         start !== undefined && end !== undefined
-          ? fs.createReadStream(filepath, { start, end })
-          : fs.createReadStream(filepath);
+          ? fs.createReadStream(resolved, { start, end })
+          : fs.createReadStream(resolved);
 
       // Wire client disconnect → destroy the file stream so we don't keep
       // reading bytes for a request the browser has already cancelled.

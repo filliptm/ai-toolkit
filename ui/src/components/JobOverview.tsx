@@ -135,7 +135,6 @@ export default function JobOverview({ job }: JobOverviewProps) {
     if (job.gpu_ids === 'mps') return [0];
     return job.gpu_ids.split(',').map(id => parseInt(id));
   }, [job.gpu_ids]);
-
   const { log, status: statusLog } = useJobLog(job.id, 2000);
   const { sampleImages, status: sampleStatus, refreshSampleImages } = useSampleImages(job.id, 5000);
   const { files, refreshFiles } = useFilesList(job.id, 5000);
@@ -179,8 +178,10 @@ export default function JobOverview({ job }: JobOverviewProps) {
   }, [sampleImages, numSamples]);
 
   const logLines: string[] = useMemo(() => {
-    let splits: string[] = log.split(/\n|\r\n/);
-    splits = splits.map(line => line.split(/\r/).pop()) as string[];
+    // Log is already terminal-rendered by useJobLog — one entry per line.
+    let splits: string[] = log.split('\n');
+
+    // only return last 100 lines max
     const maxLines = 1000;
     if (splits.length > maxLines) splits = splits.slice(splits.length - maxLines);
     return splits;
